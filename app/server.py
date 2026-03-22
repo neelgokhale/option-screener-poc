@@ -1,9 +1,10 @@
 """FastAPI application instance and route registration.
 
-This is the main entry point for the backend. Vercel's Python runtime
-picks up the `app` object from `api/index.py`, which imports it from here.
+This is the main entry point for the backend.
 For local development, run: uvicorn app.server:app --reload
 """
+
+import threading
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,6 +37,14 @@ app.add_middleware(
 _yahoo = YahooFinanceProvider()
 _news = FinnhubNewsProvider() if settings.finnhub_api_key else None
 
+# Request coalescing: if a scan is already running, subsequent requests
+# wait for that same result instead of firing a duplicate scan.
+# This prevents yfinance rate limiting when multiple users hit the endpoint.
+_scan_lock = threading.Lock()
+_scan_in_progress: threading.Event | None = None
+_scan_result: ScanResult | None = None
+_scan_error: Exception | None = None
+
 
 @app.get("/")
 def root() -> dict[str, str]:
@@ -67,19 +76,77 @@ def get_trades(
 ) -> ScanResult:
     """Run the full screening pipeline and return ranked trades.
 
+    Uses request coalescing: if a full scan (no custom symbols) is already
+    running, this request waits for that result instead of starting another.
+    Custom symbol scans bypass coalescing since they're lightweight.
+
     Query params:
         symbols: Optional comma-separated list of symbols to scan
                  instead of the full S&P 500. Useful for testing.
         max_trades: Override the default max trades to return.
     """
     symbol_list = symbols.split(",") if symbols else None
-    return run_scan(
-        market_provider=_yahoo,
-        options_provider=_yahoo,
-        news_provider=_news,
-        symbols=symbol_list,
-        max_trades=max_trades,
-    )
+
+    # Custom symbol scans are lightweight — run directly, no coalescing
+    if symbol_list is not None:
+        return run_scan(
+            market_provider=_yahoo,
+            options_provider=_yahoo,
+            news_provider=_news,
+            symbols=symbol_list,
+            max_trades=max_trades,
+        )
+
+    return _coalesced_scan(max_trades)
+
+
+def _coalesced_scan(max_trades: int | None = None) -> ScanResult:
+    """Run a full scan, or wait for one already in progress."""
+    global _scan_in_progress, _scan_result, _scan_error
+
+    with _scan_lock:
+        if _scan_in_progress is not None:
+            # A scan is already running — wait for it
+            event = _scan_in_progress
+        else:
+            # No scan running — we'll be the one to run it
+            event = threading.Event()
+            _scan_in_progress = event
+            _scan_result = None
+            _scan_error = None
+            event = None  # signal that we're the runner
+
+    if event is not None:
+        # We're a waiter — block until the runner finishes
+        event.wait()
+        if _scan_error is not None:
+            raise _scan_error
+        assert _scan_result is not None
+        return _scan_result
+
+    # We're the runner — execute the scan
+    try:
+        result = run_scan(
+            market_provider=_yahoo,
+            options_provider=_yahoo,
+            news_provider=_news,
+            symbols=None,
+            max_trades=max_trades,
+        )
+        with _scan_lock:
+            _scan_result = result
+            _scan_error = None
+        return result
+    except Exception as exc:
+        with _scan_lock:
+            _scan_error = exc
+        raise
+    finally:
+        with _scan_lock:
+            done_event = _scan_in_progress
+            _scan_in_progress = None
+        if done_event is not None:
+            done_event.set()
 
 
 @app.get("/api/market-status", response_model=MarketRiskStatus)

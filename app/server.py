@@ -37,6 +37,12 @@ _yahoo = YahooFinanceProvider()
 _news = FinnhubNewsProvider() if settings.finnhub_api_key else None
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    """Root route — used by Railway health checks."""
+    return {"service": "option-screener-api", "status": "ok"}
+
+
 @app.get("/api/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}

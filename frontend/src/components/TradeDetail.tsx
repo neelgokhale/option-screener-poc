@@ -42,12 +42,12 @@ export default function TradeDetail({ trade }: Props) {
             </div>
             <div className="flex justify-between">
               <span className="text-terminal-muted">(1-POP) x Loss</span>
-              <span className="text-terminal-red">-${evBreakdown.lossSide.toFixed(0)}</span>
+              <span className="text-terminal-red">-${Math.abs(evBreakdown.lossSide).toFixed(0)}</span>
             </div>
             <div className="flex justify-between border-t border-terminal-border pt-1">
               <span className="text-terminal-muted">Net EV</span>
               <span className={trade.expected_value >= 0 ? 'text-terminal-green' : 'text-terminal-red'}>
-                ${trade.expected_value.toFixed(0)}
+                {trade.expected_value >= 0 ? '' : '-'}${Math.abs(trade.expected_value).toFixed(0)}
               </span>
             </div>
           </div>

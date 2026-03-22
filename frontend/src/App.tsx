@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import AppHeader from './components/AppHeader'
 import ControlBar from './components/ControlBar'
 import FilterPanel, { DEFAULT_FILTERS, type Filters } from './components/FilterPanel'
+import Legend from './components/Legend'
 import RiskDashboard from './components/RiskDashboard'
 import TradeTable from './components/TradeTable'
 import { useTrades, useMarketStatus } from './hooks/useTrades'
@@ -17,6 +18,7 @@ function App() {
   })
   const [filterOpen, setFilterOpen] = useState(false)
   const [riskOpen, setRiskOpen] = useState(false)
+  const [legendOpen, setLegendOpen] = useState(false)
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
 
   const { scanResult, loading, error, runScan } = useTrades()
@@ -43,8 +45,10 @@ function App() {
         onScan={() => runScan()}
         onToggleFilter={() => setFilterOpen(!filterOpen)}
         onToggleRisk={() => setRiskOpen(!riskOpen)}
+        onToggleLegend={() => setLegendOpen(!legendOpen)}
         loading={loading}
         filterOpen={filterOpen}
+        legendOpen={legendOpen}
       />
 
       {riskOpen && (
@@ -54,6 +58,10 @@ function App() {
           onRefresh={refreshMarket}
           onClose={() => setRiskOpen(false)}
         />
+      )}
+
+      {legendOpen && (
+        <Legend onClose={() => setLegendOpen(false)} />
       )}
 
       {filterOpen && (

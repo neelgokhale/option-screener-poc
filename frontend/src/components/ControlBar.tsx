@@ -2,11 +2,13 @@ interface Props {
   onScan: () => void
   onToggleFilter: () => void
   onToggleRisk: () => void
+  onToggleLegend: () => void
   loading: boolean
   filterOpen: boolean
+  legendOpen: boolean
 }
 
-export default function ControlBar({ onScan, onToggleFilter, onToggleRisk, loading, filterOpen }: Props) {
+export default function ControlBar({ onScan, onToggleFilter, onToggleRisk, onToggleLegend, loading, filterOpen, legendOpen }: Props) {
   return (
     <div className="border-b border-terminal-border bg-terminal-surface px-4 py-2 flex items-center gap-2 flex-wrap">
       <button
@@ -33,6 +35,17 @@ export default function ControlBar({ onScan, onToggleFilter, onToggleRisk, loadi
         }`}
       >
         Filter
+      </button>
+
+      <button
+        onClick={onToggleLegend}
+        className={`px-3 py-1.5 border rounded text-sm transition-colors ${
+          legendOpen
+            ? 'bg-terminal-yellow/30 text-terminal-yellow border-terminal-yellow/30'
+            : 'bg-terminal-yellow/20 text-terminal-yellow border-terminal-yellow/30 hover:bg-terminal-yellow/30'
+        }`}
+      >
+        Legend
       </button>
     </div>
   )

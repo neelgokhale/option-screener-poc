@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     alert_email_from: str = "screener@option-screener.dev"
     dashboard_url: str = "http://localhost:3000"
 
+    # Database
+    db_path: str = "data/screener.db"
+
     # Screening parameters
     max_trades: int = 15
     scan_cache_ttl_seconds: int = 3600  # 1 hour

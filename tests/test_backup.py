@@ -34,11 +34,16 @@ class TestBackupUpload:
             db_path=str(db_file),
             bucket="test-bucket",
             region="us-east-1",
+            aws_access_key_id="AKID",
+            aws_secret_access_key="SECRET",
         )
 
         assert key == "backups/screener-2026-04-05.db"
         mock_boto3.client.assert_called_once_with(
-            "s3", region_name="us-east-1"
+            "s3",
+            region_name="us-east-1",
+            aws_access_key_id="AKID",
+            aws_secret_access_key="SECRET",
         )
         mock_client.upload_file.assert_called_once_with(
             str(db_file), "test-bucket", "backups/screener-2026-04-05.db"
@@ -109,6 +114,8 @@ class TestRunBackup:
         s = SimpleNamespace(
             db_path="data/screener.db",
             s3_bucket_name="test-bucket",
+            aws_access_key_id="AKID",
+            aws_secret_access_key="SECRET",
             aws_region="us-east-1",
             backup_retention_days=30,
         )

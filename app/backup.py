@@ -15,13 +15,19 @@ def backup_db_to_s3(
     bucket: str,
     region: str,
     retention_days: int = 30,
+    aws_access_key_id: str = "",
+    aws_secret_access_key: str = "",
 ) -> str:
     """Upload SQLite DB to S3 and prune old backups.
 
     Returns the S3 key of the uploaded file.
     """
     key = f"backups/screener-{_today().isoformat()}.db"
-    client = boto3.client("s3", region_name=region)
+    client_kwargs = {"region_name": region}
+    if aws_access_key_id and aws_secret_access_key:
+        client_kwargs["aws_access_key_id"] = aws_access_key_id
+        client_kwargs["aws_secret_access_key"] = aws_secret_access_key
+    client = boto3.client("s3", **client_kwargs)
     client.upload_file(db_path, bucket, key)
     logger.info("Uploaded %s to s3://%s/%s", db_path, bucket, key)
 
@@ -64,6 +70,8 @@ def run_backup(settings) -> None:
             bucket=settings.s3_bucket_name,
             region=settings.aws_region,
             retention_days=settings.backup_retention_days,
+            aws_access_key_id=settings.aws_access_key_id,
+            aws_secret_access_key=settings.aws_secret_access_key,
         )
     except Exception:
         logger.exception("S3 backup failed")

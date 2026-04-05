@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # Database
     db_path: str = "data/screener.db"
 
+    # S3 backup
+    s3_bucket_name: str = ""
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region: str = "us-east-1"
+    backup_retention_days: int = 30
+
     # Screening parameters
     max_trades: int = 15
     scan_cache_ttl_seconds: int = 3600  # 1 hour

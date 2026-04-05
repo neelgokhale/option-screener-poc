@@ -5,6 +5,7 @@ Usage: python cron.py
 
 import logging
 
+from app.backup import run_backup
 from app.config import settings
 from app.db import get_connection
 from app.orchestrator import snapshot_daily_trades
@@ -29,6 +30,8 @@ def main() -> None:
             logger.info("Snapshot %d created", snapshot_id)
     finally:
         conn.close()
+
+    run_backup(settings)
 
 
 if __name__ == "__main__":

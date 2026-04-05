@@ -218,3 +218,7 @@ __marimo__/
 
 # Claude files
 .claude
+.claudeignore
+
+# DB files
+*.db

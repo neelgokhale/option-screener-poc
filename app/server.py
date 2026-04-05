@@ -4,9 +4,14 @@ This is the main entry point for the backend.
 For local development, run: uvicorn app.server:app --reload
 """
 
+import logging
 import threading
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import date
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -22,10 +27,36 @@ from app.models.stock import UniverseFilterResult
 from app.providers.news import FinnhubNewsProvider
 from app.providers.yahoo import YahooFinanceProvider
 
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Scheduled cron job — runs inside the web process
+# ---------------------------------------------------------------------------
+
+_scheduler = BackgroundScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    from cron import main as run_cron
+
+    _scheduler.add_job(
+        run_cron,
+        CronTrigger(hour=14, minute=0, day_of_week="mon-fri", timezone="UTC"),
+        id="daily_snapshot",
+        replace_existing=True,
+    )
+    _scheduler.start()
+    logger.info("Scheduler started — daily snapshot at 14:00 UTC Mon-Fri")
+    yield
+    _scheduler.shutdown()
+
+
 app = FastAPI(
     title="Option Screener API",
     version="0.1.0",
     description="AI Short-Put Option Screener for the wheel strategy",
+    lifespan=lifespan,
 )
 
 # Allow frontend to call API during development

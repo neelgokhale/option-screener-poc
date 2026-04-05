@@ -12,7 +12,7 @@ function formatPct(val: number | null): string {
 
 function formatHitRate(val: number | null): string {
   if (val === null) return '—'
-  return `${(val * 100).toFixed(1)}%`
+  return `${val.toFixed(1)}%`
 }
 
 function formatRatio(val: number | null): string {

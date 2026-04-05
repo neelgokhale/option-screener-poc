@@ -71,7 +71,7 @@ describe('SummaryCards', () => {
       total_tracked: 42,
       total_resolved: 30,
       total_active: 12,
-      hit_rate: 0.733,
+      hit_rate: 73.3,
       avg_return_pct: 2.15,
       avg_win_pct: 3.5,
       avg_loss_pct: -1.8,

@@ -15,7 +15,7 @@ Key implementation notes:
 
 import json
 import logging
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -152,6 +152,23 @@ class YahooFinanceProvider(MarketDataProvider, OptionsDataProvider):
             open_interest=cls._safe_int(row.get("openInterest")),
             volume=cls._safe_int(row.get("volume")),
         )
+
+
+def get_settlement_price(symbol: str, expiry_date: str) -> float | None:
+    """Fetch the closing price on the expiry date via yfinance.
+
+    Returns None if no data is available (e.g., market holiday).
+    """
+    try:
+        ticker = yf.Ticker(symbol)
+        expiry = date.fromisoformat(expiry_date)
+        hist = ticker.history(start=expiry.isoformat(), end=(expiry + timedelta(days=1)).isoformat())
+        if hist.empty:
+            return None
+        return float(hist["Close"].iloc[0])
+    except Exception:
+        logger.warning("Failed to fetch settlement price for %s on %s", symbol, expiry_date, exc_info=True)
+        return None
 
 
 # Minimal fallback in case Wikipedia scrape fails.

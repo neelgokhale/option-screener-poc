@@ -98,10 +98,6 @@ def _passes_filters(profile: StockProfile, tracker: _FilterTracker) -> bool:
         tracker.exclude(symbol, "market_cap_below_10B")
         return False
 
-    if profile.net_income <= 0:
-        tracker.exclude(symbol, "negative_net_income")
-        return False
-
     if profile.roe < MIN_ROE:
         tracker.exclude(symbol, "roe_below_10pct")
         return False

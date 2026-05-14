@@ -5,11 +5,11 @@ class SafetyComponents(BaseModel):
     """Individual components of the safety score, for transparency."""
 
     distance_from_support: float  # 0-1, weight 25%
-    pre_market_stability: float  # 0-1, weight 15%
     sector_correlation: float  # 0-1, weight 10%
     iv_rank_stability: float  # 0-1, weight 15%
-    institutional_flow: float  # 0-1, weight 20%
+    institutional_flow: float  # 0-1, weight 25%
     market_risk: float  # 0-1, weight 15%
+    sentiment: float  # 0-1, weight 10%
 
 
 class SafetyResult(BaseModel):

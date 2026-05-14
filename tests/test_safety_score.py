@@ -3,15 +3,34 @@
 from datetime import date
 
 from app.engine.safety_score import (
+    W_CORRELATION,
+    W_DISTANCE,
+    W_FLOW,
+    W_IV_RANK,
+    W_MARKET,
+    W_SENTIMENT,
+    _beta_correlation,
     _distance_from_support,
     _iv_rank_stability,
     _market_risk_score,
-    _premarket_stability,
+    _sentiment_score,
     calculate_adjusted_score,
+    calculate_safety_score,
 )
 from app.models.market import MarketRiskStatus
-from app.models.option import ScreenedTrade
+from app.models.option import Headline, ScreenedTrade
+from app.providers.base import NewsProvider
 from tests.conftest import make_stock
+
+
+class MockNewsProvider(NewsProvider):
+    def __init__(self, headlines: dict[str, list[Headline]]) -> None:
+        self._headlines = headlines
+
+    def get_recent_headlines(
+        self, symbol: str, hours: int = 24, *, as_of=None
+    ) -> list[Headline]:
+        return self._headlines.get(symbol, [])
 
 
 def _make_trade(
@@ -59,28 +78,71 @@ class TestDistanceFromSupport:
         assert 0.33 < score < 0.34
 
 
-class TestPremarketStability:
-    def test_no_premarket_data(self) -> None:
-        profile = make_stock(pre_market_price=None)
-        assert _premarket_stability(profile) == 1.0
+class TestBetaCorrelation:
+    def test_beta_0_8(self) -> None:
+        profile = make_stock(beta=0.8)
+        assert _beta_correlation(profile) == 0.2
 
-    def test_stable_premarket(self) -> None:
-        profile = make_stock(previous_close=100.0, pre_market_price=100.5)
-        score = _premarket_stability(profile)
-        # change = 0.5%, stability = 1 - (0.005/0.03) = 0.833
-        assert 0.8 < score < 0.9
+    def test_beta_above_1_clamped(self) -> None:
+        profile = make_stock(beta=1.5)
+        assert _beta_correlation(profile) == 0.0
 
-    def test_volatile_premarket(self) -> None:
-        profile = make_stock(previous_close=100.0, pre_market_price=103.0)
-        score = _premarket_stability(profile)
-        # change = 3%, stability = 1 - (0.03/0.03) = 0.0
+    def test_beta_0_gives_max_score(self) -> None:
+        profile = make_stock(beta=0.0)
+        assert _beta_correlation(profile) == 1.0
+
+    def test_negative_beta_uses_abs(self) -> None:
+        profile = make_stock(beta=-0.6)
+        assert _beta_correlation(profile) == 0.4
+
+    def test_none_beta_defaults_to_half(self) -> None:
+        profile = make_stock(beta=None)
+        assert _beta_correlation(profile) == 0.5
+
+
+class TestSentimentScore:
+    def _headline(self, score: float) -> Headline:
+        return Headline(
+            title="test",
+            source="Test",
+            published_at="2026-03-21T10:00:00Z",
+            ticker_sentiment_score=score,
+        )
+
+    def test_positive_sentiment(self) -> None:
+        news = MockNewsProvider({
+            "TEST": [self._headline(0.3), self._headline(0.5)]
+        })
+        # avg = 0.4, score = (1 + 0.4) / 2 = 0.7
+        score = _sentiment_score("TEST", news)
+        assert 0.69 < score < 0.71
+
+    def test_negative_sentiment(self) -> None:
+        news = MockNewsProvider({
+            "TEST": [self._headline(-0.8)]
+        })
+        # avg = -0.8, score = (1 + -0.8) / 2 = 0.1
+        score = _sentiment_score("TEST", news)
+        assert 0.09 < score < 0.11
+
+    def test_extreme_negative_clamped_to_zero(self) -> None:
+        news = MockNewsProvider({
+            "TEST": [self._headline(-1.5)]
+        })
+        score = _sentiment_score("TEST", news)
         assert score == 0.0
 
-    def test_beyond_threshold(self) -> None:
-        profile = make_stock(previous_close=100.0, pre_market_price=105.0)
-        score = _premarket_stability(profile)
-        # change = 5%, clamped to 0
-        assert score == 0.0
+    def test_no_articles_defaults_to_half(self) -> None:
+        news = MockNewsProvider({})
+        score = _sentiment_score("TEST", news)
+        assert score == 0.5
+
+    def test_articles_without_scores_defaults_to_half(self) -> None:
+        news = MockNewsProvider({
+            "TEST": [Headline(title="test", source="T", published_at="2026-01-01")]
+        })
+        score = _sentiment_score("TEST", news)
+        assert score == 0.5
 
 
 class TestIVRankStability:
@@ -122,6 +184,43 @@ class TestMarketRiskScore:
         )
         score = _market_risk_score(risk)
         assert 0.4 < score < 0.6  # ~0.50
+
+
+class TestCompositeWeights:
+    def test_weights_sum_to_one(self) -> None:
+        total = W_DISTANCE + W_CORRELATION + W_IV_RANK + W_FLOW + W_MARKET + W_SENTIMENT
+        assert total == 1.0
+
+    def test_no_premarket_weight_exists(self) -> None:
+        import app.engine.safety_score as ss
+        assert not hasattr(ss, "W_PREMARKET")
+
+    def test_composite_uses_new_components(self) -> None:
+        from tests.test_options_screener import MockOptionsProvider, _make_put
+        from app.models.option import OptionsChain
+
+        trade = _make_trade()
+        profile = make_stock(symbol="TEST", beta=0.8)
+        risk = MarketRiskStatus(
+            vix_level=20.0, spy_price=500.0, spy_sma_20=495.0,
+            spy_above_sma=True, risk_elevated=False,
+        )
+        expiry_str = trade.expiry.isoformat()
+        chain = OptionsChain(
+            symbol="TEST", expiry=trade.expiry,
+            puts=[_make_put(symbol="TEST", expiry=trade.expiry)],
+            calls=[_make_put(symbol="TEST", expiry=trade.expiry, strike=160.0)],
+        )
+        options = MockOptionsProvider({expiry_str: chain})
+        news = MockNewsProvider({"TEST": []})
+
+        result = calculate_safety_score(
+            trade, profile, risk, options, news,
+        )
+        assert 0.0 <= result.score <= 1.0
+        assert result.components.sentiment is not None
+        assert result.components.sector_correlation is not None
+        assert not hasattr(result.components, "pre_market_stability")
 
 
 class TestAdjustedScore:

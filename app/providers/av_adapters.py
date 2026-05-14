@@ -200,10 +200,19 @@ class AVNewsAdapter(NewsProvider):
 
         headlines = []
         for article in data.get("feed", []):
+            sentiment = None
+            relevance = None
+            for ts in article.get("ticker_sentiment", []):
+                if ts.get("ticker") == symbol:
+                    sentiment = _safe_float(ts.get("ticker_sentiment_score")) or None
+                    relevance = _safe_float(ts.get("relevance_score")) or None
+                    break
             headlines.append(Headline(
                 title=article.get("title", ""),
                 source=article.get("source", ""),
                 published_at=article.get("time_published", ""),
                 url=article.get("url"),
+                ticker_sentiment_score=sentiment,
+                relevance_score=relevance,
             ))
         return headlines

@@ -130,17 +130,17 @@ class TestOptionsScreener:
         assert len(trades) == 0
 
     def test_delta_too_aggressive_excluded(self) -> None:
-        """Delta more negative than -0.30 is too risky."""
+        """Delta more negative than MIN_DELTA is too risky."""
         expiry = date.today() + timedelta(days=17)
-        put = _make_put(delta=-0.35, expiry=expiry)
+        put = _make_put(delta=-0.40, expiry=expiry)
         market, options, stock = self._setup(puts=[put])
         trades = screen_options_for_stock(stock, market, options)
         assert len(trades) == 0
 
     def test_delta_too_conservative_excluded(self) -> None:
-        """Delta less negative than -0.15 has too little premium."""
+        """Delta less negative than MAX_DELTA has too little premium."""
         expiry = date.today() + timedelta(days=17)
-        put = _make_put(delta=-0.10, expiry=expiry)
+        put = _make_put(delta=-0.05, expiry=expiry)
         market, options, stock = self._setup(puts=[put])
         trades = screen_options_for_stock(stock, market, options)
         assert len(trades) == 0

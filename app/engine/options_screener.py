@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 # PRD §3.4 screening thresholds
 MIN_DTE = 14
 MAX_DTE = 21
-MIN_DELTA = -0.30  # Most aggressive (higher risk)
-MAX_DELTA = -0.15  # Most conservative (lower risk)
+MIN_DELTA = -0.35  # Most aggressive (higher risk)
+MAX_DELTA = -0.10  # Most conservative (lower risk)
 MIN_POP = 0.70  # 70%
 MIN_PREMIUM_YIELD = 0.005  # 0.5% annualized
 MIN_OPEN_INTEREST = 1000
@@ -147,7 +147,7 @@ def _evaluate_put(
             stock.current_price, put.strike, put.implied_volatility, dte
         )
 
-    # Filter: delta range (-0.30 to -0.15)
+    # Filter: delta range (MIN_DELTA to MAX_DELTA)
     if not (MIN_DELTA <= delta <= MAX_DELTA):
         return None
 

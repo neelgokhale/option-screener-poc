@@ -85,6 +85,7 @@ export default function ScreenerPage() {
       <TradeTable
         trades={scanResult?.trades ?? []}
         filters={filters}
+        loading={loading}
       />
     </>
   )

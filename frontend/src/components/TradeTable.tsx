@@ -8,6 +8,7 @@ import TradeDetail from './TradeDetail'
 interface Props {
   trades: TradeOutput[]
   filters: Filters
+  loading?: boolean
 }
 
 const COLUMN_TIPS: Record<string, string> = {
@@ -20,7 +21,7 @@ const COLUMN_TIPS: Record<string, string> = {
   'Adj Score': 'EV x (1 + Safety) — final ranking metric',
 }
 
-export default function TradeTable({ trades, filters }: Props) {
+export default function TradeTable({ trades, filters, loading = false }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const filtered = trades.filter((t) => {
@@ -36,7 +37,9 @@ export default function TradeTable({ trades, filters }: Props) {
   if (filtered.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-terminal-muted text-sm py-16">
-        {trades.length === 0
+        {loading
+          ? 'Running scan…'
+          : trades.length === 0
           ? 'Run the scanner to find trades'
           : 'No trades match current filters'}
       </div>

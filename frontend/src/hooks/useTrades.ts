@@ -2,8 +2,17 @@ import { useState, useCallback } from 'react'
 import type { ScanResult, MarketRiskStatus } from '../types'
 import { fetchTrades, fetchMarketStatus } from '../api/client'
 
+function loadCachedScan(): ScanResult | null {
+  try {
+    const raw = sessionStorage.getItem('scanResult')
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
 export function useTrades() {
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null)
+  const [scanResult, setScanResult] = useState<ScanResult | null>(loadCachedScan)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -13,6 +22,7 @@ export function useTrades() {
     try {
       const result = await fetchTrades(symbols)
       setScanResult(result)
+      sessionStorage.setItem('scanResult', JSON.stringify(result))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Scan failed')
     } finally {

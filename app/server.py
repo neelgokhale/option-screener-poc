@@ -4,25 +4,59 @@ This is the main entry point for the backend.
 For local development, run: uvicorn app.server:app --reload
 """
 
+import logging
 import threading
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from datetime import date
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.db import get_connection, get_summary_stats, get_trades_by_status
 from app.engine.market_risk import assess_market_risk
 from app.engine.pipeline import run_scan
 from app.engine.universe import filter_universe
 from app.models.market import MarketRiskStatus
 from app.models.option import ScanResult
+from app.models.report import SummaryResponse, TradeItem, TradesResponse
 from app.models.stock import UniverseFilterResult
 from app.providers.news import FinnhubNewsProvider
 from app.providers.yahoo import YahooFinanceProvider
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Scheduled cron job — runs inside the web process
+# ---------------------------------------------------------------------------
+
+_scheduler = BackgroundScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    from cron import main as run_cron
+
+    _scheduler.add_job(
+        run_cron,
+        CronTrigger(hour=14, minute=0, day_of_week="mon-fri", timezone="UTC"),
+        id="daily_snapshot",
+        replace_existing=True,
+    )
+    _scheduler.start()
+    logger.info("Scheduler started — daily snapshot at 14:00 UTC Mon-Fri")
+    yield
+    _scheduler.shutdown()
+
 
 app = FastAPI(
     title="Option Screener API",
     version="0.1.0",
     description="AI Short-Put Option Screener for the wheel strategy",
+    lifespan=lifespan,
 )
 
 # Allow frontend to call API during development
@@ -153,3 +187,38 @@ def _coalesced_scan(max_trades: int | None = None) -> ScanResult:
 def get_market_status() -> MarketRiskStatus:
     """Get current market risk indicators (VIX + SPY trend)."""
     return assess_market_risk(_yahoo)
+
+
+# ---------------------------------------------------------------------------
+# Report endpoints — backtesting data
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/report/summary", response_model=SummaryResponse)
+def get_report_summary() -> SummaryResponse:
+    """Return aggregate backtesting statistics."""
+    conn = get_connection(settings.db_path)
+    try:
+        stats = get_summary_stats(conn)
+        return SummaryResponse(**stats)
+    finally:
+        conn.close()
+
+
+@app.get("/api/report/trades", response_model=TradesResponse)
+def get_report_trades(status: str = "all") -> TradesResponse:
+    """Return trade list filtered by status with computed fields."""
+    conn = get_connection(settings.db_path)
+    try:
+        rows = get_trades_by_status(conn, status)
+        today = date.today()
+        trades = []
+        for row in rows:
+            days_remaining = None
+            if row.get("outcome") is None:
+                expiry = date.fromisoformat(row["expiry"])
+                days_remaining = max((expiry - today).days, 0)
+            trades.append(TradeItem(**row, days_remaining=days_remaining))
+        return TradesResponse(trades=trades)
+    finally:
+        conn.close()

@@ -8,8 +8,16 @@ anyio==4.12.1
     # via
     #   httpx
     #   starlette
+apscheduler==3.11.2
+    # via option-screener-poc (pyproject.toml)
 beautifulsoup4==4.14.3
     # via yfinance
+boto3==1.42.83
+    # via option-screener-poc (pyproject.toml)
+botocore==1.42.83
+    # via
+    #   boto3
+    #   s3transfer
 certifi==2026.2.25
     # via
     #   curl-cffi
@@ -41,6 +49,10 @@ idna==3.11
     #   anyio
     #   httpx
     #   requests
+jmespath==1.1.0
+    # via
+    #   boto3
+    #   botocore
 lxml==6.0.2
     # via option-screener-poc (pyproject.toml)
 multitasking==0.0.12
@@ -72,13 +84,17 @@ pydantic-core==2.41.5
 pydantic-settings==2.13.1
     # via option-screener-poc (pyproject.toml)
 python-dateutil==2.9.0.post0
-    # via pandas
+    # via
+    #   botocore
+    #   pandas
 python-dotenv==1.2.2
     # via pydantic-settings
 pytz==2026.1.post1
     # via yfinance
 requests==2.32.5
     # via yfinance
+s3transfer==0.16.0
+    # via boto3
 six==1.17.0
     # via python-dateutil
 soupsieve==2.8.3
@@ -97,8 +113,12 @@ typing-inspection==0.4.2
     #   fastapi
     #   pydantic
     #   pydantic-settings
+tzlocal==5.3.1
+    # via apscheduler
 urllib3==2.6.3
-    # via requests
+    # via
+    #   botocore
+    #   requests
 uvicorn==0.42.0
     # via option-screener-poc (pyproject.toml)
 websockets==16.0

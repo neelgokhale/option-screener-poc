@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # API keys
     finnhub_api_key: str = ""
     resend_api_key: str = ""
+    alphavantage_api_key: str = ""
 
     # Alert settings
     alert_email_to: str = ""
@@ -21,6 +22,13 @@ class Settings(BaseSettings):
 
     # Database
     db_path: str = "data/screener.db"
+
+    # S3 backup
+    s3_bucket_name: str = ""
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region: str = "us-east-1"
+    backup_retention_days: int = 30
 
     # Screening parameters
     max_trades: int = 15

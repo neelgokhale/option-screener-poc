@@ -1,79 +1,68 @@
-"""Safety score calculation (PRD §3.7).
+"""Safety score calculation.
 
 Each trade receives a Safety Score (0-1) based on six weighted factors.
 The score adjusts the final ranking so safer trades rise to the top.
 
-Components and weights:
-    Distance from support    25%  — how far the strike is below support
-    Pre-market stability     15%  — how calm the stock is pre-market
-    Sector correlation       10%  — lower SPY correlation = more diversified
-    IV rank stability        15%  — lower IV rank = less volatile environment
-    Institutional flow       20%  — put/call OI ratio as flow proxy
-    Market risk              15%  — VIX-based broad market score
-
 Final formula:
-    Adjusted Score = Put Opportunity Score × (1 + Safety Score)
+    Adjusted Score = EV × (1 + Safety Score)
 """
 
 import logging
 from datetime import date
 
-import numpy as np
-
 from app.models.market import MarketRiskStatus
 from app.models.option import ScreenedTrade
 from app.models.safety import SafetyComponents, SafetyResult
 from app.models.stock import StockProfile
-from app.providers.base import MarketDataProvider, OptionsDataProvider
+from app.providers.base import NewsProvider, OptionsDataProvider
 
 logger = logging.getLogger(__name__)
 
 # Component weights (must sum to 1.0)
 W_DISTANCE = 0.25
-W_PREMARKET = 0.15
 W_CORRELATION = 0.10
 W_IV_RANK = 0.15
-W_FLOW = 0.20
+W_FLOW = 0.25
 W_MARKET = 0.15
+W_SENTIMENT = 0.10
 
 
 def calculate_safety_score(
     trade: ScreenedTrade,
     profile: StockProfile,
     market_risk: MarketRiskStatus,
-    market_provider: MarketDataProvider,
     options_provider: OptionsDataProvider,
+    news_provider: NewsProvider | None = None,
     *,
     as_of: date | None = None,
 ) -> SafetyResult:
-    """Compute the composite safety score for a screened trade.
-
-    Each component is normalized to 0-1, where 1 = safest.
-    The composite is the weighted sum.
-    """
     dist = _distance_from_support(trade)
-    premarket = _premarket_stability(profile)
-    corr = _sector_correlation(profile.symbol, market_provider, as_of=as_of)
+    corr = _beta_correlation(profile)
     iv_rank = _iv_rank_stability(trade)
     flow = _institutional_flow(trade, options_provider, as_of=as_of)
     market = _market_risk_score(market_risk)
+    sent = (
+        _sentiment_score(trade.symbol, news_provider, as_of=as_of)
+        if news_provider is not None
+        else 0.5
+    )
 
     components = SafetyComponents(
         distance_from_support=dist,
-        pre_market_stability=premarket,
         sector_correlation=corr,
         iv_rank_stability=iv_rank,
         institutional_flow=flow,
         market_risk=market,
+        sentiment=sent,
     )
 
     score = (
         W_DISTANCE * dist
-        + W_PREMARKET * premarket
         + W_CORRELATION * corr
         + W_IV_RANK * iv_rank
         + W_FLOW * flow
         + W_MARKET * market
+        + W_SENTIMENT * sent
     )
 
     return SafetyResult(score=round(score, 4), components=components)
@@ -101,54 +90,28 @@ def _distance_from_support(trade: ScreenedTrade) -> float:
     return min(max(gap, 0.0), 1.0)
 
 
-def _premarket_stability(profile: StockProfile) -> float:
-    """How stable the stock is in pre-market.
-
-    Score = 1 - (|premarket_change| / 3%), clamped to [0, 1].
-    If no pre-market data, assume stable (score = 1.0).
-    """
-    if profile.pre_market_price is None or profile.previous_close <= 0:
-        return 1.0  # No data = assume stable
-
-    change = abs(profile.pre_market_price - profile.previous_close) / profile.previous_close
-    score = 1.0 - (change / 0.03)
-    return min(max(score, 0.0), 1.0)
+def _beta_correlation(profile: StockProfile) -> float:
+    if profile.beta is None:
+        return 0.5
+    return round(1.0 - min(abs(profile.beta), 1.0), 4)
 
 
-def _sector_correlation(
-    symbol: str, provider: MarketDataProvider, *, as_of: date | None = None
+def _sentiment_score(
+    symbol: str, news_provider: NewsProvider, *, as_of: date | None = None
 ) -> float:
-    """Inverse correlation with SPY over 30 days.
-
-    Lower correlation = more diversification benefit = higher score.
-    Score = 1 - |correlation|, so uncorrelated stocks score highest.
-    """
     try:
-        stock_hist = provider.get_price_history(symbol, period="2mo", interval="1d", as_of=as_of)
-        spy_hist = provider.get_price_history("SPY", period="2mo", interval="1d", as_of=as_of)
-
-        if stock_hist.empty or spy_hist.empty or len(stock_hist) < 20:
-            return 0.5  # Default if insufficient data
-
-        stock_returns = stock_hist["Close"].pct_change().dropna().iloc[-30:]
-        spy_returns = spy_hist["Close"].pct_change().dropna().iloc[-30:]
-
-        # Align lengths
-        min_len = min(len(stock_returns), len(spy_returns))
-        if min_len < 10:
+        headlines = news_provider.get_recent_headlines(symbol, hours=24, as_of=as_of)
+        scores = [
+            h.ticker_sentiment_score
+            for h in headlines
+            if h.ticker_sentiment_score is not None
+        ]
+        if not scores:
             return 0.5
-
-        corr = np.corrcoef(
-            stock_returns.iloc[-min_len:].values,
-            spy_returns.iloc[-min_len:].values,
-        )[0, 1]
-
-        if np.isnan(corr):
-            return 0.5
-
-        return round(1.0 - abs(corr), 4)
+        avg = sum(scores) / len(scores)
+        return min(max((1.0 + avg) / 2.0, 0.0), 1.0)
     except Exception:
-        logger.warning("Correlation calc failed for %s", symbol, exc_info=True)
+        logger.warning("Sentiment score failed for %s", symbol, exc_info=True)
         return 0.5
 
 

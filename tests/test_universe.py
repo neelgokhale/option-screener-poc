@@ -17,10 +17,9 @@ class TestUniverseFilter:
         assert "SMALL" not in result.qualified
         assert "SMALL" in result.filtered_out.get("market_cap_below_10B", [])
 
-    def test_negative_income_excluded(self, mock_provider: MockMarketDataProvider) -> None:
+    def test_negative_income_no_longer_excluded(self, mock_provider: MockMarketDataProvider) -> None:
         result = filter_universe(mock_provider)
-        assert "LOSER" not in result.qualified
-        assert "LOSER" in result.filtered_out.get("negative_net_income", [])
+        assert "LOSER" in result.qualified
 
     def test_low_roe_excluded(self, mock_provider: MockMarketDataProvider) -> None:
         result = filter_universe(mock_provider)
@@ -41,9 +40,9 @@ class TestUniverseFilter:
         result = filter_universe(mock_provider)
         assert result.total_scanned == 6
 
-    def test_only_one_qualifies(self, mock_provider: MockMarketDataProvider) -> None:
+    def test_two_qualify_after_net_income_dropped(self, mock_provider: MockMarketDataProvider) -> None:
         result = filter_universe(mock_provider)
-        assert result.qualified == ["GOOD"]
+        assert set(result.qualified) == {"GOOD", "LOSER"}
 
     def test_custom_symbol_list(self, mock_provider: MockMarketDataProvider) -> None:
         """When given explicit symbols, only those are scanned."""
@@ -57,6 +56,13 @@ class TestUniverseFilter:
         result = filter_universe(provider, symbols=["FAKE"])
         assert result.qualified == []
         assert "FAKE" in result.filtered_out.get("data_unavailable", [])
+
+    def test_negative_net_income_now_qualifies(self) -> None:
+        """NetIncome > 0 was dropped (redundant with ROE > 10%)."""
+        stock = make_stock(symbol="NEGNI", net_income=-100_000_000, roe=0.15)
+        provider = MockMarketDataProvider({"NEGNI": stock})
+        result = filter_universe(provider)
+        assert "NEGNI" in result.qualified
 
     def test_borderline_values(self) -> None:
         """Stocks exactly at filter boundaries should be excluded."""

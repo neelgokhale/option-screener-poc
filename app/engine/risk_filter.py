@@ -1,14 +1,10 @@
-"""Risk filtering layer (PRD §3.2).
+"""Risk filtering layer.
 
-Three filters that exclude stocks with elevated near-term risk:
+Two filters that exclude stocks with elevated near-term risk:
 
-1. News filter — scan 24h headlines for negative keywords
-   (downgrades, litigation, regulatory actions, etc.)
-2. Pre-market movement filter — exclude stocks moving > ±3% pre-market
-3. Earnings filter — exclude stocks with earnings within 21 days
-
-These filters run AFTER the universe filter but BEFORE options screening,
-so we avoid wasting API calls on stocks we'd reject anyway.
+1. Sentiment filter — exclude when AV NEWS_SENTIMENT has
+   ticker_sentiment_score < -0.35 AND relevance_score > 0.5
+2. Earnings filter — exclude stocks with earnings within 21 days
 """
 
 import logging
@@ -20,37 +16,8 @@ from app.providers.base import MarketDataProvider, NewsProvider
 
 logger = logging.getLogger(__name__)
 
-# Keywords that signal elevated risk in headlines
-NEGATIVE_KEYWORDS = [
-    "downgrade",
-    "downgrades",
-    "downgraded",
-    "lawsuit",
-    "litigation",
-    "sued",
-    "sec investigation",
-    "sec charges",
-    "regulatory",
-    "regulation",
-    "fine",
-    "penalty",
-    "warning",
-    "warns",
-    "earnings warning",
-    "profit warning",
-    "layoff",
-    "layoffs",
-    "restructuring",
-    "recall",
-    "bankruptcy",
-    "default",
-    "fraud",
-    "scandal",
-    "probe",
-    "investigation",
-]
-
-MAX_PREMARKET_CHANGE = 0.03  # 3%
+SENTIMENT_THRESHOLD = -0.35
+RELEVANCE_THRESHOLD = 0.5
 EARNINGS_EXCLUSION_DAYS = 21
 
 
@@ -59,8 +26,7 @@ class RiskFilterResult:
     """Tracks which stocks were excluded by risk filters."""
 
     passed: list[str] = field(default_factory=list)
-    excluded_news: list[str] = field(default_factory=list)
-    excluded_premarket: list[str] = field(default_factory=list)
+    excluded_sentiment: list[str] = field(default_factory=list)
     excluded_earnings: list[str] = field(default_factory=list)
 
 
@@ -71,96 +37,63 @@ def apply_risk_filters(
     news_provider: NewsProvider | None = None,
     as_of: date | None = None,
 ) -> RiskFilterResult:
-    """Apply all risk filters to a list of symbols.
-
-    Args:
-        symbols: Symbols that passed the universe filter.
-        profiles: Pre-fetched StockProfile data keyed by symbol.
-        market_provider: For earnings date lookup.
-        news_provider: For headline scanning. If None, news filter is skipped.
-
-    Returns:
-        RiskFilterResult with lists of passed and excluded symbols.
-    """
     result = RiskFilterResult()
 
-    # Run cheap filters first (no API calls) to reduce the pool
-    # before hitting Finnhub's 60 calls/min rate limit.
-    after_cheap_filters: list[str] = []
+    after_earnings: list[str] = []
 
     for symbol in symbols:
         profile = profiles.get(symbol)
         if profile is None:
             continue
 
-        # Filter 1: Pre-market movement (free — uses cached profile data)
-        if _has_excessive_premarket_move(profile):
-            result.excluded_premarket.append(symbol)
-            continue
-
-        # Filter 2: Earnings within 21 days
         if _has_upcoming_earnings(symbol, market_provider, as_of=as_of):
             result.excluded_earnings.append(symbol)
             continue
 
-        after_cheap_filters.append(symbol)
+        after_earnings.append(symbol)
 
-    # Filter 3: News headlines (expensive — 1 Finnhub API call per stock)
-    # Run last, with rate limiting, on the reduced pool
-    for symbol in after_cheap_filters:
+    for symbol in after_earnings:
         if news_provider is not None:
-            if _has_negative_news(symbol, news_provider, as_of=as_of):
-                result.excluded_news.append(symbol)
+            if _has_negative_sentiment(symbol, news_provider, as_of=as_of):
+                result.excluded_sentiment.append(symbol)
                 continue
 
         result.passed.append(symbol)
 
     logger.info(
-        "Risk filter: %d passed, %d excluded (news=%d, premarket=%d, earnings=%d)",
+        "Risk filter: %d passed, %d excluded (sentiment=%d, earnings=%d)",
         len(result.passed),
-        len(result.excluded_news) + len(result.excluded_premarket) + len(result.excluded_earnings),
-        len(result.excluded_news),
-        len(result.excluded_premarket),
+        len(result.excluded_sentiment) + len(result.excluded_earnings),
+        len(result.excluded_sentiment),
         len(result.excluded_earnings),
     )
 
     return result
 
 
-def _has_negative_news(
+def _has_negative_sentiment(
     symbol: str, news_provider: NewsProvider, *, as_of: date | None = None
 ) -> bool:
-    """Check if any recent headlines contain negative keywords."""
     try:
         headlines = news_provider.get_recent_headlines(symbol, hours=24, as_of=as_of)
         for headline in headlines:
-            title_lower = headline.title.lower()
-            if any(kw in title_lower for kw in NEGATIVE_KEYWORDS):
-                logger.debug("Negative news for %s: %s", symbol, headline.title)
+            score = headline.ticker_sentiment_score
+            relevance = headline.relevance_score
+            if (
+                score is not None
+                and relevance is not None
+                and score < SENTIMENT_THRESHOLD
+                and relevance > RELEVANCE_THRESHOLD
+            ):
+                logger.debug(
+                    "Negative sentiment for %s: score=%.2f, relevance=%.2f",
+                    symbol, score, relevance,
+                )
                 return True
         return False
     except Exception:
-        logger.warning("News check failed for %s, allowing through", symbol, exc_info=True)
+        logger.warning("Sentiment check failed for %s, allowing through", symbol, exc_info=True)
         return False
-
-
-def _has_excessive_premarket_move(profile: StockProfile) -> bool:
-    """Check if pre-market price change exceeds ±3%.
-
-    Returns False if pre-market data is unavailable (common after hours).
-    """
-    if profile.pre_market_price is None or profile.previous_close <= 0:
-        return False
-
-    change = abs(profile.pre_market_price - profile.previous_close) / profile.previous_close
-    if change > MAX_PREMARKET_CHANGE:
-        logger.debug(
-            "Pre-market move for %s: %.1f%%",
-            profile.symbol,
-            change * 100,
-        )
-        return True
-    return False
 
 
 def _has_upcoming_earnings(

@@ -69,6 +69,7 @@ def apply_risk_filters(
     profiles: dict[str, StockProfile],
     market_provider: MarketDataProvider,
     news_provider: NewsProvider | None = None,
+    as_of: date | None = None,
 ) -> RiskFilterResult:
     """Apply all risk filters to a list of symbols.
 
@@ -97,8 +98,8 @@ def apply_risk_filters(
             result.excluded_premarket.append(symbol)
             continue
 
-        # Filter 2: Earnings within 21 days (free — uses yfinance calendar)
-        if _has_upcoming_earnings(symbol, market_provider):
+        # Filter 2: Earnings within 21 days
+        if _has_upcoming_earnings(symbol, market_provider, as_of=as_of):
             result.excluded_earnings.append(symbol)
             continue
 
@@ -108,7 +109,7 @@ def apply_risk_filters(
     # Run last, with rate limiting, on the reduced pool
     for symbol in after_cheap_filters:
         if news_provider is not None:
-            if _has_negative_news(symbol, news_provider):
+            if _has_negative_news(symbol, news_provider, as_of=as_of):
                 result.excluded_news.append(symbol)
                 continue
 
@@ -126,10 +127,12 @@ def apply_risk_filters(
     return result
 
 
-def _has_negative_news(symbol: str, news_provider: NewsProvider) -> bool:
+def _has_negative_news(
+    symbol: str, news_provider: NewsProvider, *, as_of: date | None = None
+) -> bool:
     """Check if any recent headlines contain negative keywords."""
     try:
-        headlines = news_provider.get_recent_headlines(symbol, hours=24)
+        headlines = news_provider.get_recent_headlines(symbol, hours=24, as_of=as_of)
         for headline in headlines:
             title_lower = headline.title.lower()
             if any(kw in title_lower for kw in NEGATIVE_KEYWORDS):
@@ -160,7 +163,9 @@ def _has_excessive_premarket_move(profile: StockProfile) -> bool:
     return False
 
 
-def _has_upcoming_earnings(symbol: str, provider: MarketDataProvider) -> bool:
+def _has_upcoming_earnings(
+    symbol: str, provider: MarketDataProvider, *, as_of: date | None = None
+) -> bool:
     """Check if earnings are within 21 days.
 
     yfinance's ticker.calendar returns a dict with:
@@ -186,7 +191,7 @@ def _has_upcoming_earnings(symbol: str, provider: MarketDataProvider) -> bool:
         if not isinstance(earnings_dates, list):
             earnings_dates = [earnings_dates]
 
-        today = date.today()
+        today = as_of or date.today()
         for ed in earnings_dates:
             # Convert to date if it's a datetime
             if hasattr(ed, "date"):

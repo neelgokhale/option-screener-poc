@@ -14,7 +14,8 @@ class StockProfile(BaseModel):
     avg_volume: float  # Average daily volume in shares
     current_price: float
     previous_close: float
-    pre_market_price: float | None = None  # None if not available
+    pre_market_price: float | None = None
+    beta: float | None = None
 
 
 class UniverseFilterResult(BaseModel):

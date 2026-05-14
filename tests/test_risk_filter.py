@@ -8,7 +8,6 @@ from app.engine.risk_filter import (
     apply_risk_filters,
 )
 from app.models.option import Headline
-from app.models.stock import StockProfile
 from app.providers.base import NewsProvider
 from tests.conftest import MockMarketDataProvider, make_stock
 
@@ -19,7 +18,9 @@ class MockNewsProvider(NewsProvider):
     def __init__(self, headlines: dict[str, list[Headline]]) -> None:
         self._headlines = headlines
 
-    def get_recent_headlines(self, symbol: str, hours: int = 24) -> list[Headline]:
+    def get_recent_headlines(
+        self, symbol: str, hours: int = 24, *, as_of=None
+    ) -> list[Headline]:
         return self._headlines.get(symbol, [])
 
 

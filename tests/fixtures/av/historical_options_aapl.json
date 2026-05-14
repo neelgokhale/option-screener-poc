@@ -1,0 +1,50 @@
+{
+    "endpoint": "Historical Options",
+    "message": "success",
+    "data": [
+        {
+            "contractID": "AAPL260620P00200000",
+            "symbol": "AAPL",
+            "expiration": "2026-06-20",
+            "strike": "200.00",
+            "type": "put",
+            "last": "2.60",
+            "mark": "2.60",
+            "bid": "2.50",
+            "bid_size": "10",
+            "ask": "2.70",
+            "ask_size": "15",
+            "volume": "1500",
+            "open_interest": "8000",
+            "date": "2026-05-14",
+            "implied_volatility": "0.25000",
+            "delta": "-0.22000",
+            "gamma": "0.01500",
+            "theta": "-0.05000",
+            "vega": "0.10000",
+            "rho": "-0.01000"
+        },
+        {
+            "contractID": "AAPL260620C00200000",
+            "symbol": "AAPL",
+            "expiration": "2026-06-20",
+            "strike": "200.00",
+            "type": "call",
+            "last": "30.00",
+            "mark": "30.10",
+            "bid": "29.90",
+            "bid_size": "20",
+            "ask": "30.30",
+            "ask_size": "25",
+            "volume": "3000",
+            "open_interest": "12000",
+            "date": "2026-05-14",
+            "implied_volatility": "0.24000",
+            "delta": "0.78000",
+            "gamma": "0.01500",
+            "theta": "-0.06000",
+            "vega": "0.10000",
+            "rho": "0.02000"
+        }
+    ]
+}

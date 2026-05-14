@@ -1,0 +1,39 @@
+{
+    "Meta Data": {
+        "1. Information": "Daily Time Series with Splits and Dividend Events",
+        "2. Symbol": "AAPL",
+        "3. Last Refreshed": "2026-05-14"
+    },
+    "Time Series (Daily)": {
+        "2026-05-14": {
+            "1. open": "230.00",
+            "2. high": "235.00",
+            "3. low": "228.00",
+            "4. close": "233.50",
+            "5. adjusted close": "233.50",
+            "6. volume": "45000000",
+            "7. dividend amount": "0.0000",
+            "8. split coefficient": "1.0"
+        },
+        "2026-05-13": {
+            "1. open": "228.00",
+            "2. high": "231.00",
+            "3. low": "226.50",
+            "4. close": "230.00",
+            "5. adjusted close": "230.00",
+            "6. volume": "38000000",
+            "7. dividend amount": "0.0000",
+            "8. split coefficient": "1.0"
+        },
+        "2026-05-12": {
+            "1. open": "225.00",
+            "2. high": "229.00",
+            "3. low": "224.00",
+            "4. close": "228.00",
+            "5. adjusted close": "228.00",
+            "6. volume": "42000000",
+            "7. dividend amount": "0.0000",
+            "8. split coefficient": "1.0"
+        }
+    }
+}

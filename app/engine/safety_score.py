@@ -16,9 +16,9 @@ Final formula:
 """
 
 import logging
+from datetime import date
 
 import numpy as np
-import pandas as pd
 
 from app.models.market import MarketRiskStatus
 from app.models.option import ScreenedTrade
@@ -43,6 +43,8 @@ def calculate_safety_score(
     market_risk: MarketRiskStatus,
     market_provider: MarketDataProvider,
     options_provider: OptionsDataProvider,
+    *,
+    as_of: date | None = None,
 ) -> SafetyResult:
     """Compute the composite safety score for a screened trade.
 
@@ -51,9 +53,9 @@ def calculate_safety_score(
     """
     dist = _distance_from_support(trade)
     premarket = _premarket_stability(profile)
-    corr = _sector_correlation(profile.symbol, market_provider)
+    corr = _sector_correlation(profile.symbol, market_provider, as_of=as_of)
     iv_rank = _iv_rank_stability(trade)
-    flow = _institutional_flow(trade, options_provider)
+    flow = _institutional_flow(trade, options_provider, as_of=as_of)
     market = _market_risk_score(market_risk)
 
     components = SafetyComponents(
@@ -113,15 +115,17 @@ def _premarket_stability(profile: StockProfile) -> float:
     return min(max(score, 0.0), 1.0)
 
 
-def _sector_correlation(symbol: str, provider: MarketDataProvider) -> float:
+def _sector_correlation(
+    symbol: str, provider: MarketDataProvider, *, as_of: date | None = None
+) -> float:
     """Inverse correlation with SPY over 30 days.
 
     Lower correlation = more diversification benefit = higher score.
     Score = 1 - |correlation|, so uncorrelated stocks score highest.
     """
     try:
-        stock_hist = provider.get_price_history(symbol, period="2mo", interval="1d")
-        spy_hist = provider.get_price_history("SPY", period="2mo", interval="1d")
+        stock_hist = provider.get_price_history(symbol, period="2mo", interval="1d", as_of=as_of)
+        spy_hist = provider.get_price_history("SPY", period="2mo", interval="1d", as_of=as_of)
 
         if stock_hist.empty or spy_hist.empty or len(stock_hist) < 20:
             return 0.5  # Default if insufficient data
@@ -164,6 +168,8 @@ def _iv_rank_stability(trade: ScreenedTrade) -> float:
 def _institutional_flow(
     trade: ScreenedTrade,
     options_provider: OptionsDataProvider,
+    *,
+    as_of: date | None = None,
 ) -> float:
     """Put/call open interest ratio as a proxy for institutional flow.
 
@@ -174,7 +180,7 @@ def _institutional_flow(
     """
     try:
         chain = options_provider.get_options_chain(
-            trade.symbol, trade.expiry.isoformat()
+            trade.symbol, trade.expiry.isoformat(), as_of=as_of
         )
         total_put_oi = sum(p.open_interest for p in chain.puts)
         total_call_oi = sum(c.open_interest for c in chain.calls)

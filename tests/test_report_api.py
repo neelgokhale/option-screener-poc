@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db import get_connection, insert_snapshot, insert_trades, update_trade_outcome
+from app.db import insert_snapshot, insert_trades, update_trade_outcome
 
 
 SAMPLE_SNAPSHOT = {

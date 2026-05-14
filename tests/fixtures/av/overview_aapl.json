@@ -1,0 +1,19 @@
+{
+    "Symbol": "AAPL",
+    "AssetType": "Common Stock",
+    "Name": "Apple Inc",
+    "Exchange": "NASDAQ",
+    "Currency": "USD",
+    "Country": "USA",
+    "Sector": "TECHNOLOGY",
+    "Industry": "ELECTRONIC COMPUTERS",
+    "MarketCapitalization": "3200000000000",
+    "EBITDA": "130000000000",
+    "PERatio": "32.5",
+    "ReturnOnEquityTTM": "1.50",
+    "Beta": "1.25",
+    "52WeekHigh": "260.0",
+    "52WeekLow": "170.0",
+    "50DayMovingAverage": "225.0",
+    "200DayMovingAverage": "210.0"
+}

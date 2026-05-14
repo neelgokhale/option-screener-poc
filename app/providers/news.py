@@ -12,7 +12,7 @@ transparently — callers don't need to worry about pacing.
 import logging
 import time
 from collections import deque
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
@@ -52,7 +52,7 @@ class FinnhubNewsProvider(NewsProvider):
         self._call_times.append(time.monotonic())
 
     def get_recent_headlines(
-        self, symbol: str, hours: int = 24
+        self, symbol: str, hours: int = 24, *, as_of: date | None = None
     ) -> list[Headline]:
         if not self._api_key:
             logger.debug("No Finnhub API key configured, skipping news check")

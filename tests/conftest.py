@@ -1,29 +1,31 @@
-"""Shared test fixtures.
+"""Shared test fixtures."""
 
-Provides mock providers with deterministic data so tests don't hit
-real APIs. Each fixture returns a provider pre-loaded with sample
-StockProfile data covering various filter edge cases.
-"""
+from datetime import date
 
 import pandas as pd
 import pytest
 
-from app.models.option import OptionsChain
 from app.models.stock import StockProfile
 from app.providers.base import MarketDataProvider
 
 
 class MockMarketDataProvider(MarketDataProvider):
-    """In-memory provider for testing. Stocks are loaded via a dict."""
 
     def __init__(self, stocks: dict[str, StockProfile]) -> None:
         self._stocks = stocks
 
-    def get_stock_info(self, symbol: str) -> StockProfile | None:
+    def get_stock_info(
+        self, symbol: str, *, as_of: date | None = None
+    ) -> StockProfile | None:
         return self._stocks.get(symbol)
 
     def get_price_history(
-        self, symbol: str, period: str = "3mo", interval: str = "1d"
+        self,
+        symbol: str,
+        period: str = "3mo",
+        interval: str = "1d",
+        *,
+        as_of: date | None = None,
     ) -> pd.DataFrame:
         return pd.DataFrame()
 

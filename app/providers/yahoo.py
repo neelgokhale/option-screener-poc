@@ -38,7 +38,9 @@ class YahooFinanceProvider(MarketDataProvider, OptionsDataProvider):
     the same Ticker object.
     """
 
-    def get_stock_info(self, symbol: str) -> StockProfile | None:
+    def get_stock_info(
+        self, symbol: str, *, as_of: date | None = None
+    ) -> StockProfile | None:
         try:
             ticker = yf.Ticker(symbol)
             info = ticker.info
@@ -74,7 +76,12 @@ class YahooFinanceProvider(MarketDataProvider, OptionsDataProvider):
             return None
 
     def get_price_history(
-        self, symbol: str, period: str = "3mo", interval: str = "1d"
+        self,
+        symbol: str,
+        period: str = "3mo",
+        interval: str = "1d",
+        *,
+        as_of: date | None = None,
     ) -> pd.DataFrame:
         ticker = yf.Ticker(symbol)
         hist = ticker.history(period=period, interval=interval)
@@ -93,11 +100,15 @@ class YahooFinanceProvider(MarketDataProvider, OptionsDataProvider):
             logger.warning("Failed to load S&P 500 list from file", exc_info=True)
             return _FALLBACK_SYMBOLS
 
-    def get_expiry_dates(self, symbol: str) -> list[str]:
+    def get_expiry_dates(
+        self, symbol: str, *, as_of: date | None = None
+    ) -> list[str]:
         ticker = yf.Ticker(symbol)
         return list(ticker.options)
 
-    def get_options_chain(self, symbol: str, expiry: str) -> OptionsChain:
+    def get_options_chain(
+        self, symbol: str, expiry: str, *, as_of: date | None = None
+    ) -> OptionsChain:
         ticker = yf.Ticker(symbol)
         chain = ticker.option_chain(expiry)
         expiry_date = date.fromisoformat(expiry)

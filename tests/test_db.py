@@ -48,6 +48,7 @@ class TestGetConnection:
             "market_risk_elevated",
             "vix_level",
             "spy_price",
+            "backtest_run_id",
         }
 
         # snapshot_trades table exists with expected columns

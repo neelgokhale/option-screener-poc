@@ -47,14 +47,14 @@ class MockOptionsProvider(OptionsDataProvider):
     def __init__(self, chains: dict[str, OptionsChain]) -> None:
         self._chains = chains
 
-    def get_expiry_dates(self, symbol: str) -> list[str]:
+    def get_expiry_dates(self, symbol: str, *, as_of=None) -> list[str]:
         return [
             chain.expiry.isoformat()
             for chain in self._chains.values()
             if chain.symbol == symbol
         ]
 
-    def get_options_chain(self, symbol: str, expiry: str) -> OptionsChain:
+    def get_options_chain(self, symbol: str, expiry: str, *, as_of=None) -> OptionsChain:
         return self._chains[expiry]
 
 
@@ -65,11 +65,11 @@ class MockMarketProvider(MarketDataProvider):
         self._stock = stock
         self._support = support_price
 
-    def get_stock_info(self, symbol: str) -> StockProfile | None:
+    def get_stock_info(self, symbol: str, *, as_of=None) -> StockProfile | None:
         return self._stock if symbol == self._stock.symbol else None
 
     def get_price_history(
-        self, symbol: str, period: str = "3mo", interval: str = "1d"
+        self, symbol: str, period: str = "3mo", interval: str = "1d", *, as_of=None
     ) -> pd.DataFrame:
         # Create a price history with a clear dip at support_price
         prices = (

@@ -11,7 +11,6 @@ from app.engine.safety_score import (
 )
 from app.models.market import MarketRiskStatus
 from app.models.option import ScreenedTrade
-from app.models.stock import StockProfile
 from tests.conftest import make_stock
 
 

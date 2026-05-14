@@ -11,6 +11,7 @@ during market stress.
 """
 
 import logging
+from datetime import date
 
 from app.models.market import MarketRiskStatus
 from app.providers.base import MarketDataProvider
@@ -23,14 +24,16 @@ VIX_THRESHOLD = 25.0
 SMA_PERIOD = 20
 
 
-def assess_market_risk(provider: MarketDataProvider) -> MarketRiskStatus:
+def assess_market_risk(
+    provider: MarketDataProvider, *, as_of: date | None = None
+) -> MarketRiskStatus:
     """Evaluate current market risk from VIX and SPY.
 
     Returns a MarketRiskStatus indicating whether risk is elevated
     and why. Used by the pipeline to decide how many trades to output.
     """
-    vix_level = _get_vix(provider)
-    spy_price, spy_sma = _get_spy_trend(provider)
+    vix_level = _get_vix(provider, as_of=as_of)
+    spy_price, spy_sma = _get_spy_trend(provider, as_of=as_of)
     spy_above_sma = spy_price >= spy_sma
 
     reasons: list[str] = []
@@ -55,10 +58,11 @@ def assess_market_risk(provider: MarketDataProvider) -> MarketRiskStatus:
     )
 
 
-def _get_vix(provider: MarketDataProvider) -> float:
-    """Fetch the current VIX level."""
+def _get_vix(
+    provider: MarketDataProvider, *, as_of: date | None = None
+) -> float:
     try:
-        hist = provider.get_price_history(VIX_SYMBOL, period="5d", interval="1d")
+        hist = provider.get_price_history(VIX_SYMBOL, period="5d", interval="1d", as_of=as_of)
         if hist.empty:
             return 0.0
         return float(hist["Close"].iloc[-1])
@@ -67,13 +71,11 @@ def _get_vix(provider: MarketDataProvider) -> float:
         return 0.0
 
 
-def _get_spy_trend(provider: MarketDataProvider) -> tuple[float, float]:
-    """Fetch SPY current price and 20-day SMA.
-
-    Returns (current_price, sma_20).
-    """
+def _get_spy_trend(
+    provider: MarketDataProvider, *, as_of: date | None = None
+) -> tuple[float, float]:
     try:
-        hist = provider.get_price_history(SPY_SYMBOL, period="2mo", interval="1d")
+        hist = provider.get_price_history(SPY_SYMBOL, period="2mo", interval="1d", as_of=as_of)
         if hist.empty or len(hist) < SMA_PERIOD:
             return 0.0, 0.0
         current = float(hist["Close"].iloc[-1])

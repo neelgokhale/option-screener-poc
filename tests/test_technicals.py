@@ -1,7 +1,6 @@
 """Tests for technical support/resistance calculation."""
 
 import pandas as pd
-import numpy as np
 
 from app.engine.technicals import _find_local_minima, _cluster_levels, find_support_level
 from tests.conftest import MockMarketDataProvider, make_stock
@@ -76,14 +75,14 @@ class TestFindSupportLevel:
         )
         hist = pd.DataFrame({
             "Open": lows,
-            "High": [l + 2 for l in lows],
+            "High": [low + 2 for low in lows],
             "Low": lows,
-            "Close": [l + 1 for l in lows],
+            "Close": [low + 1 for low in lows],
             "Volume": [1000000] * len(lows),
         })
 
         class PriceProvider(MockMarketDataProvider):
-            def get_price_history(self, symbol, period="3mo", interval="1d"):
+            def get_price_history(self, symbol, period="3mo", interval="1d", *, as_of=None):
                 return hist
 
         provider = PriceProvider({"TEST": make_stock()})

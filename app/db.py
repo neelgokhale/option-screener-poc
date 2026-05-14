@@ -181,6 +181,17 @@ def get_trades_by_status(conn: sqlite3.Connection, status: str) -> list[dict]:
 
 def _create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript("""
+        CREATE TABLE IF NOT EXISTS backtest_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            date_range_start TEXT NOT NULL,
+            date_range_end TEXT NOT NULL,
+            scan_frequency TEXT NOT NULL,
+            strategy_params TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             snapshot_date TEXT NOT NULL,
@@ -189,7 +200,8 @@ def _create_schema(conn: sqlite3.Connection) -> None:
             trades_screened INTEGER NOT NULL,
             market_risk_elevated INTEGER NOT NULL,
             vix_level REAL NOT NULL,
-            spy_price REAL NOT NULL
+            spy_price REAL NOT NULL,
+            backtest_run_id INTEGER REFERENCES backtest_runs(id)
         );
 
         CREATE TABLE IF NOT EXISTS snapshot_trades (

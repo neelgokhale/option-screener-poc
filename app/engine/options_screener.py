@@ -49,19 +49,21 @@ def screen_options_for_stock(
     stock: StockProfile,
     market_provider: MarketDataProvider,
     options_provider: OptionsDataProvider,
+    *,
+    as_of: date | None = None,
 ) -> list[ScreenedTrade]:
     """Screen all qualifying put options for a single stock.
 
     Returns a list of ScreenedTrade objects for contracts that pass
     all filters. May return an empty list if no contracts qualify.
     """
-    today = date.today()
+    today = as_of or date.today()
     target_min = today + timedelta(days=MIN_DTE)
     target_max = today + timedelta(days=MAX_DTE)
 
     # Get available expiry dates
     try:
-        expiry_dates = options_provider.get_expiry_dates(stock.symbol)
+        expiry_dates = options_provider.get_expiry_dates(stock.symbol, as_of=as_of)
     except Exception:
         logger.warning("Failed to get expiry dates for %s", stock.symbol, exc_info=True)
         return []
@@ -73,7 +75,7 @@ def screen_options_for_stock(
 
     # Find support level for strike validation
     support = find_support_level(
-        market_provider, stock.symbol, stock.current_price
+        market_provider, stock.symbol, stock.current_price, as_of=as_of
     )
     if support is None:
         support = stock.current_price * FALLBACK_SUPPORT_DISCOUNT
@@ -82,7 +84,7 @@ def screen_options_for_stock(
     trades: list[ScreenedTrade] = []
     for expiry_str in qualifying_expiries:
         try:
-            chain = options_provider.get_options_chain(stock.symbol, expiry_str)
+            chain = options_provider.get_options_chain(stock.symbol, expiry_str, as_of=as_of)
         except Exception:
             logger.warning(
                 "Failed to get options chain for %s exp %s",

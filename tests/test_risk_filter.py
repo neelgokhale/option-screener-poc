@@ -1,5 +1,7 @@
 """Tests for the risk filtering layer."""
 
+from unittest.mock import patch
+
 from app.engine.risk_filter import (
     _has_excessive_premarket_move,
     _has_negative_news,
@@ -78,7 +80,8 @@ class TestNewsFilter:
 
 
 class TestApplyRiskFilters:
-    def test_all_pass(self) -> None:
+    @patch("app.engine.risk_filter._has_upcoming_earnings", return_value=False)
+    def test_all_pass(self, _mock_earnings) -> None:
         profiles = {
             "A": make_stock(symbol="A", pre_market_price=None),
             "B": make_stock(symbol="B", pre_market_price=None),
@@ -87,7 +90,8 @@ class TestApplyRiskFilters:
         result = apply_risk_filters(["A", "B"], profiles, provider)
         assert result.passed == ["A", "B"]
 
-    def test_premarket_excluded(self) -> None:
+    @patch("app.engine.risk_filter._has_upcoming_earnings", return_value=False)
+    def test_premarket_excluded(self, _mock_earnings) -> None:
         profiles = {
             "GOOD": make_stock(symbol="GOOD", pre_market_price=None),
             "BAD": make_stock(symbol="BAD", previous_close=100.0, pre_market_price=105.0),
@@ -97,7 +101,8 @@ class TestApplyRiskFilters:
         assert "GOOD" in result.passed
         assert "BAD" in result.excluded_premarket
 
-    def test_news_excluded(self) -> None:
+    @patch("app.engine.risk_filter._has_upcoming_earnings", return_value=False)
+    def test_news_excluded(self, _mock_earnings) -> None:
         profiles = {
             "GOOD": make_stock(symbol="GOOD", pre_market_price=None),
             "BAD": make_stock(symbol="BAD", pre_market_price=None),

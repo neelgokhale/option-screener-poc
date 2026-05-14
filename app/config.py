@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # API keys
     finnhub_api_key: str = ""
     resend_api_key: str = ""
+    alphavantage_api_key: str = ""
 
     # Alert settings
     alert_email_to: str = ""

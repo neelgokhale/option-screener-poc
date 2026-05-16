@@ -12,6 +12,8 @@ def resolve_expired_trades(
     conn: sqlite3.Connection,
     settlement_price_fn: Callable[[str, str], float | None],
     as_of_date: date | None = None,
+    *,
+    backtest_run_id: int | None = None,
 ) -> int:
     """Resolve all expired, unresolved trades.
 
@@ -23,7 +25,7 @@ def resolve_expired_trades(
     if as_of_date is None:
         as_of_date = date.today()
 
-    trades = get_unresolved_trades(conn, as_of_date)
+    trades = get_unresolved_trades(conn, as_of_date, backtest_run_id=backtest_run_id)
     resolved = 0
 
     for trade in trades:

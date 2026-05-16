@@ -22,8 +22,8 @@ def insert_snapshot(conn: sqlite3.Connection, snapshot: dict) -> int:
         """
         INSERT INTO snapshots (
             snapshot_date, universe_size, qualified_stocks, trades_screened,
-            market_risk_elevated, vix_level, spy_price
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            market_risk_elevated, vix_level, spy_price, backtest_run_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             snapshot["snapshot_date"],
@@ -33,6 +33,7 @@ def insert_snapshot(conn: sqlite3.Connection, snapshot: dict) -> int:
             snapshot["market_risk_elevated"],
             snapshot["vix_level"],
             snapshot["spy_price"],
+            snapshot.get("backtest_run_id"),
         ),
     )
     conn.commit()
@@ -81,17 +82,26 @@ def update_trade_outcome(
     conn.commit()
 
 
-def get_unresolved_trades(conn: sqlite3.Connection, as_of_date: date) -> list[dict]:
+def get_unresolved_trades(
+    conn: sqlite3.Connection,
+    as_of_date: date,
+    *,
+    backtest_run_id: int | None = None,
+) -> list[dict]:
     """Return trades where outcome is NULL and expiry <= as_of_date."""
-    rows = conn.execute(
-        """
+    query = """
         SELECT t.*, s.snapshot_date
         FROM snapshot_trades t
         JOIN snapshots s ON t.snapshot_id = s.id
         WHERE t.outcome IS NULL AND t.expiry <= ?
-        """,
-        (as_of_date.isoformat(),),
-    ).fetchall()
+    """
+    params: list = [as_of_date.isoformat()]
+
+    if backtest_run_id is not None:
+        query += " AND s.backtest_run_id = ?"
+        params.append(backtest_run_id)
+
+    rows = conn.execute(query, params).fetchall()
     return [dict(row) for row in rows]
 
 

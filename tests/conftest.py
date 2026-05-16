@@ -45,6 +45,7 @@ def make_stock(
     current_price: float = 150.0,
     previous_close: float = 149.0,
     pre_market_price: float | None = None,
+    beta: float | None = None,
 ) -> StockProfile:
     """Factory for creating StockProfile instances with sensible defaults."""
     return StockProfile(
@@ -59,6 +60,7 @@ def make_stock(
         current_price=current_price,
         previous_close=previous_close,
         pre_market_price=pre_market_price,
+        beta=beta,
     )
 
 

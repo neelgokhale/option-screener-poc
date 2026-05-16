@@ -3,8 +3,7 @@
 from unittest.mock import patch
 
 from app.engine.risk_filter import (
-    _has_excessive_premarket_move,
-    _has_negative_news,
+    _has_negative_sentiment,
     apply_risk_filters,
 )
 from app.models.option import Headline
@@ -24,94 +23,77 @@ class MockNewsProvider(NewsProvider):
         return self._headlines.get(symbol, [])
 
 
-def _headline(title: str) -> Headline:
-    return Headline(title=title, source="Test", published_at="2026-03-21T10:00:00Z")
+def _headline(
+    title: str,
+    sentiment: float | None = None,
+    relevance: float | None = None,
+) -> Headline:
+    return Headline(
+        title=title,
+        source="Test",
+        published_at="2026-03-21T10:00:00Z",
+        ticker_sentiment_score=sentiment,
+        relevance_score=relevance,
+    )
 
 
-class TestPremarketFilter:
-    def test_stable_passes(self) -> None:
-        profile = make_stock(previous_close=100.0, pre_market_price=101.0)
-        assert not _has_excessive_premarket_move(profile)
+class TestSentimentFilter:
+    def test_negative_sentiment_excluded(self) -> None:
+        """Articles with score < -0.35 AND relevance > 0.5 trigger exclusion."""
+        news = MockNewsProvider({
+            "TEST": [_headline("Bad news", sentiment=-0.50, relevance=0.8)]
+        })
+        assert _has_negative_sentiment("TEST", news)
 
-    def test_volatile_excluded(self) -> None:
-        profile = make_stock(previous_close=100.0, pre_market_price=104.0)
-        assert _has_excessive_premarket_move(profile)
+    def test_negative_but_irrelevant_passes(self) -> None:
+        """Negative sentiment with low relevance does not trigger exclusion."""
+        news = MockNewsProvider({
+            "TEST": [_headline("Bad news", sentiment=-0.50, relevance=0.3)]
+        })
+        assert not _has_negative_sentiment("TEST", news)
 
-    def test_no_premarket_passes(self) -> None:
-        profile = make_stock(pre_market_price=None)
-        assert not _has_excessive_premarket_move(profile)
+    def test_relevant_but_positive_passes(self) -> None:
+        """High relevance with positive sentiment does not trigger exclusion."""
+        news = MockNewsProvider({
+            "TEST": [_headline("Good news", sentiment=0.20, relevance=0.8)]
+        })
+        assert not _has_negative_sentiment("TEST", news)
 
-    def test_negative_move_excluded(self) -> None:
-        profile = make_stock(previous_close=100.0, pre_market_price=96.0)
-        assert _has_excessive_premarket_move(profile)
-
-    def test_exactly_3pct_passes(self) -> None:
-        profile = make_stock(previous_close=100.0, pre_market_price=103.0)
-        assert not _has_excessive_premarket_move(profile)
-
-
-class TestNewsFilter:
-    def test_no_news_passes(self) -> None:
+    def test_no_articles_passes(self) -> None:
         news = MockNewsProvider({})
-        assert not _has_negative_news("TEST", news)
-
-    def test_positive_news_passes(self) -> None:
-        news = MockNewsProvider({
-            "TEST": [_headline("Company reports strong quarterly growth")]
-        })
-        assert not _has_negative_news("TEST", news)
-
-    def test_downgrade_excluded(self) -> None:
-        news = MockNewsProvider({
-            "TEST": [_headline("Analyst downgrades TEST to sell")]
-        })
-        assert _has_negative_news("TEST", news)
-
-    def test_lawsuit_excluded(self) -> None:
-        news = MockNewsProvider({
-            "TEST": [_headline("Company faces major lawsuit over patent")]
-        })
-        assert _has_negative_news("TEST", news)
-
-    def test_layoff_excluded(self) -> None:
-        news = MockNewsProvider({
-            "TEST": [_headline("TEST announces layoffs affecting 5000 workers")]
-        })
-        assert _has_negative_news("TEST", news)
+        assert not _has_negative_sentiment("TEST", news)
 
 
 class TestApplyRiskFilters:
     @patch("app.engine.risk_filter._has_upcoming_earnings", return_value=False)
     def test_all_pass(self, _mock_earnings) -> None:
         profiles = {
-            "A": make_stock(symbol="A", pre_market_price=None),
-            "B": make_stock(symbol="B", pre_market_price=None),
+            "A": make_stock(symbol="A"),
+            "B": make_stock(symbol="B"),
         }
         provider = MockMarketDataProvider(profiles)
         result = apply_risk_filters(["A", "B"], profiles, provider)
         assert result.passed == ["A", "B"]
 
     @patch("app.engine.risk_filter._has_upcoming_earnings", return_value=False)
-    def test_premarket_excluded(self, _mock_earnings) -> None:
+    def test_big_premarket_move_no_longer_excluded(self, _mock_earnings) -> None:
         profiles = {
-            "GOOD": make_stock(symbol="GOOD", pre_market_price=None),
-            "BAD": make_stock(symbol="BAD", previous_close=100.0, pre_market_price=105.0),
+            "JUMPY": make_stock(symbol="JUMPY", previous_close=100.0, pre_market_price=110.0),
         }
         provider = MockMarketDataProvider(profiles)
-        result = apply_risk_filters(["GOOD", "BAD"], profiles, provider)
-        assert "GOOD" in result.passed
-        assert "BAD" in result.excluded_premarket
+        result = apply_risk_filters(["JUMPY"], profiles, provider)
+        assert "JUMPY" in result.passed
 
     @patch("app.engine.risk_filter._has_upcoming_earnings", return_value=False)
-    def test_news_excluded(self, _mock_earnings) -> None:
+    def test_sentiment_excluded(self, _mock_earnings) -> None:
         profiles = {
-            "GOOD": make_stock(symbol="GOOD", pre_market_price=None),
-            "BAD": make_stock(symbol="BAD", pre_market_price=None),
+            "GOOD": make_stock(symbol="GOOD"),
+            "BAD": make_stock(symbol="BAD"),
         }
         provider = MockMarketDataProvider(profiles)
         news = MockNewsProvider({
-            "BAD": [_headline("SEC investigation into BAD")]
+            "BAD": [_headline("Bad quarter", sentiment=-0.50, relevance=0.8)]
         })
         result = apply_risk_filters(["GOOD", "BAD"], profiles, provider, news_provider=news)
         assert "GOOD" in result.passed
-        assert "BAD" in result.excluded_news
+        assert "BAD" in result.excluded_sentiment

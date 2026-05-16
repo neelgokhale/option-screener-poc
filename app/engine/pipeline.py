@@ -136,7 +136,7 @@ def run_scan(
             continue
 
         safety = calculate_safety_score(
-            trade, profile, market_risk, market_provider, options_provider,
+            trade, profile, market_risk, options_provider, news_provider,
             as_of=as_of,
         )
         adjusted = calculate_adjusted_score(trade.expected_value, safety.score)

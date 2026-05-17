@@ -105,15 +105,25 @@ def get_unresolved_trades(
     return [dict(row) for row in rows]
 
 
-def get_summary_stats(conn: sqlite3.Connection) -> dict:
+def get_summary_stats(conn: sqlite3.Connection, *, backtest_run_id: int | None = None) -> dict:
     """Compute aggregate backtesting statistics from stored trades."""
-    counts = conn.execute("""
+    run_filter = ""
+    params: list = []
+    if backtest_run_id is not None:
+        run_filter = " AND s.backtest_run_id = ?"
+        params = [backtest_run_id]
+    else:
+        run_filter = " AND s.backtest_run_id IS NULL"
+
+    counts = conn.execute(f"""
         SELECT
             COUNT(*) AS total_tracked,
-            SUM(CASE WHEN outcome IS NOT NULL THEN 1 ELSE 0 END) AS total_resolved,
-            SUM(CASE WHEN outcome IS NULL THEN 1 ELSE 0 END) AS total_active
-        FROM snapshot_trades
-    """).fetchone()
+            SUM(CASE WHEN t.outcome IS NOT NULL THEN 1 ELSE 0 END) AS total_resolved,
+            SUM(CASE WHEN t.outcome IS NULL THEN 1 ELSE 0 END) AS total_active
+        FROM snapshot_trades t
+        JOIN snapshots s ON t.snapshot_id = s.id
+        WHERE 1=1{run_filter}
+    """, params).fetchone()
 
     total_tracked = counts["total_tracked"]
     total_resolved = counts["total_resolved"]
@@ -133,20 +143,22 @@ def get_summary_stats(conn: sqlite3.Connection) -> dict:
             "date_range_end": None,
         }
 
-    resolved_stats = conn.execute("""
+    resolved_stats = conn.execute(f"""
         SELECT
-            SUM(CASE WHEN outcome = 'OTM' THEN 1 ELSE 0 END) AS wins,
-            AVG(pnl_pct) AS avg_return_pct,
-            AVG(CASE WHEN outcome = 'OTM' THEN pnl_pct END) AS avg_win_pct,
-            AVG(CASE WHEN outcome = 'ITM' THEN pnl_pct END) AS avg_loss_pct
-        FROM snapshot_trades
-        WHERE outcome IS NOT NULL
-    """).fetchone()
+            SUM(CASE WHEN t.outcome = 'OTM' THEN 1 ELSE 0 END) AS wins,
+            AVG(t.pnl_pct) AS avg_return_pct,
+            AVG(CASE WHEN t.outcome = 'OTM' THEN t.pnl_pct END) AS avg_win_pct,
+            AVG(CASE WHEN t.outcome = 'ITM' THEN t.pnl_pct END) AS avg_loss_pct
+        FROM snapshot_trades t
+        JOIN snapshots s ON t.snapshot_id = s.id
+        WHERE t.outcome IS NOT NULL{run_filter}
+    """, params).fetchone()
 
-    date_range = conn.execute("""
-        SELECT MIN(snapshot_date) AS date_range_start, MAX(snapshot_date) AS date_range_end
-        FROM snapshots
-    """).fetchone()
+    date_range = conn.execute(f"""
+        SELECT MIN(s.snapshot_date) AS date_range_start, MAX(s.snapshot_date) AS date_range_end
+        FROM snapshots s
+        WHERE 1=1{run_filter}
+    """, params).fetchone()
 
     hit_rate = None
     avg_win_pct = resolved_stats["avg_win_pct"]
@@ -173,20 +185,68 @@ def get_summary_stats(conn: sqlite3.Connection) -> dict:
     }
 
 
-def get_trades_by_status(conn: sqlite3.Connection, status: str) -> list[dict]:
+def get_trades_by_status(
+    conn: sqlite3.Connection, status: str, *, backtest_run_id: int | None = None
+) -> list[dict]:
     """Return trades filtered by status: 'active', 'resolved', or 'all'."""
     base = """
         SELECT t.*, s.snapshot_date
         FROM snapshot_trades t
         JOIN snapshots s ON t.snapshot_id = s.id
     """
-    if status == "active":
-        rows = conn.execute(base + " WHERE t.outcome IS NULL").fetchall()
-    elif status == "resolved":
-        rows = conn.execute(base + " WHERE t.outcome IS NOT NULL").fetchall()
+    conditions: list[str] = []
+    params: list = []
+
+    if backtest_run_id is not None:
+        conditions.append("s.backtest_run_id = ?")
+        params.append(backtest_run_id)
     else:
-        rows = conn.execute(base).fetchall()
+        conditions.append("s.backtest_run_id IS NULL")
+
+    if status == "active":
+        conditions.append("t.outcome IS NULL")
+    elif status == "resolved":
+        conditions.append("t.outcome IS NOT NULL")
+
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    rows = conn.execute(base + where, params).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_equity_curve_data(
+    conn: sqlite3.Connection, *, backtest_run_id: int | None = None
+) -> list[dict]:
+    """Return cumulative P&L time series grouped by snapshot date."""
+    run_filter = ""
+    params: list = []
+    if backtest_run_id is not None:
+        run_filter = " AND s.backtest_run_id = ?"
+        params = [backtest_run_id]
+    else:
+        run_filter = " AND s.backtest_run_id IS NULL"
+
+    rows = conn.execute(f"""
+        SELECT
+            s.snapshot_date AS scan_date,
+            SUM(t.pnl_pct) AS day_pnl,
+            COUNT(t.id) AS trade_count
+        FROM snapshot_trades t
+        JOIN snapshots s ON t.snapshot_id = s.id
+        WHERE t.outcome IS NOT NULL{run_filter}
+        GROUP BY s.snapshot_date
+        ORDER BY s.snapshot_date
+    """, params).fetchall()
+
+    result = []
+    cumulative = 0.0
+    for row in rows:
+        cumulative += row["day_pnl"]
+        result.append({
+            "scan_date": row["scan_date"],
+            "cumulative_pnl_pct": cumulative,
+            "trade_count": row["trade_count"],
+        })
+    return result
 
 
 def _create_schema(conn: sqlite3.Connection) -> None:

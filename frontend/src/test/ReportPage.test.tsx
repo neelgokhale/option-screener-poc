@@ -9,6 +9,7 @@ vi.mock('../hooks/useTrades', () => ({
 }))
 
 vi.mock('../api/client', () => ({
+  fetchBacktestRuns: vi.fn().mockResolvedValue([]),
   fetchReportSummary: vi.fn().mockResolvedValue({
     total_tracked: 0, total_resolved: 0, total_active: 0,
     hit_rate: null, avg_return_pct: null, avg_win_pct: null,
@@ -16,6 +17,7 @@ vi.mock('../api/client', () => ({
     date_range_start: null, date_range_end: null,
   }),
   fetchReportTrades: vi.fn().mockResolvedValue({ trades: [] }),
+  fetchEquityCurve: vi.fn().mockResolvedValue([]),
 }))
 
 function renderApp(route = '/') {
@@ -183,8 +185,8 @@ describe('StatusFilter', () => {
     // Click "Active" filter
     await userEvent.click(screen.getByRole('button', { name: /^active$/i }))
 
-    // Should have re-fetched with status=active
-    expect(fetchReportTrades).toHaveBeenLastCalledWith('active')
+    // Should have re-fetched with status=active (and null run id for live)
+    expect(fetchReportTrades).toHaveBeenLastCalledWith('active', null)
   })
 })
 
@@ -256,5 +258,57 @@ describe('EmptyTables', () => {
 
     expect(await screen.findByText(/no active trades/i)).toBeInTheDocument()
     expect(screen.getByText(/no resolved trades/i)).toBeInTheDocument()
+  })
+})
+
+const MOCK_RUNS = [
+  {
+    id: 7,
+    name: 'weekly-jan',
+    started_at: '2026-04-15T08:00:00+00:00',
+    completed_at: '2026-04-15T09:00:00+00:00',
+    date_range_start: '2025-01-01',
+    date_range_end: '2025-06-30',
+    total_trades: 10,
+  },
+]
+
+describe('BacktestRunSelector integration', () => {
+  it('selecting a run re-fetches summary and trades with that run id', async () => {
+    const { fetchBacktestRuns, fetchReportSummary, fetchReportTrades, fetchEquityCurve } = await import('../api/client') as any
+    fetchBacktestRuns.mockResolvedValue(MOCK_RUNS)
+    fetchReportSummary.mockResolvedValue(MOCK_SUMMARY_WITH_DATA)
+    fetchReportTrades.mockResolvedValue({ trades: [MOCK_ACTIVE_TRADE] })
+    fetchEquityCurve.mockResolvedValue([])
+
+    renderApp('/report')
+    expect(await screen.findByText('AAPL')).toBeInTheDocument()
+
+    // Select a backtest run
+    await userEvent.selectOptions(screen.getByRole('combobox'), '7')
+
+    // Should re-fetch with backtest_run_id
+    expect(fetchReportSummary).toHaveBeenLastCalledWith(7)
+    expect(fetchReportTrades).toHaveBeenLastCalledWith('all', 7)
+    expect(fetchEquityCurve).toHaveBeenLastCalledWith(7)
+  })
+
+  it('selecting Live reverts to live data', async () => {
+    const { fetchBacktestRuns, fetchReportSummary, fetchReportTrades, fetchEquityCurve } = await import('../api/client') as any
+    fetchBacktestRuns.mockResolvedValue(MOCK_RUNS)
+    fetchReportSummary.mockResolvedValue(MOCK_SUMMARY_WITH_DATA)
+    fetchReportTrades.mockResolvedValue({ trades: [MOCK_ACTIVE_TRADE] })
+    fetchEquityCurve.mockResolvedValue([])
+
+    renderApp('/report')
+    expect(await screen.findByText('AAPL')).toBeInTheDocument()
+
+    // Select a run first
+    await userEvent.selectOptions(screen.getByRole('combobox'), '7')
+    // Then switch back to Live
+    await userEvent.selectOptions(screen.getByRole('combobox'), '')
+
+    expect(fetchReportSummary).toHaveBeenLastCalledWith(null)
+    expect(fetchReportTrades).toHaveBeenLastCalledWith('all', null)
   })
 })

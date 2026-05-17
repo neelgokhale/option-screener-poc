@@ -1,10 +1,10 @@
 """Risk filtering layer.
 
-Two filters that exclude stocks with elevated near-term risk:
+Filters that exclude stocks with elevated near-term risk:
 
 1. Sentiment filter — exclude when AV NEWS_SENTIMENT has
    ticker_sentiment_score < -0.35 AND relevance_score > 0.5
-2. Earnings filter — exclude stocks with earnings within 21 days
+2. Earnings filter — stubbed, pending AV earnings calendar integration
 """
 
 import logging
@@ -99,47 +99,8 @@ def _has_negative_sentiment(
 def _has_upcoming_earnings(
     symbol: str, provider: MarketDataProvider, *, as_of: date | None = None
 ) -> bool:
-    """Check if earnings are within 21 days.
-
-    yfinance's ticker.calendar returns a dict with:
-        'Earnings Date': [datetime.date, ...] — list of upcoming dates
-
-    Returns False if data is unavailable (we'd rather include the
-    stock than wrongly exclude it).
+    """Stubbed — AV does not expose a per-symbol earnings calendar via the
+    provider ABC. Returns False (never excludes) until an AV-backed
+    implementation is added.
     """
-    try:
-        import yfinance as yf
-
-        ticker = yf.Ticker(symbol)
-        calendar = ticker.calendar
-
-        if not calendar or not isinstance(calendar, dict):
-            return False
-
-        earnings_dates = calendar.get("Earnings Date")
-        if not earnings_dates:
-            return False
-
-        # earnings_dates is a list of date objects
-        if not isinstance(earnings_dates, list):
-            earnings_dates = [earnings_dates]
-
-        today = as_of or date.today()
-        for ed in earnings_dates:
-            # Convert to date if it's a datetime
-            if hasattr(ed, "date"):
-                ed = ed.date()
-            elif isinstance(ed, str):
-                ed = date.fromisoformat(ed)
-
-            days_until = (ed - today).days
-            if 0 <= days_until <= EARNINGS_EXCLUSION_DAYS:
-                logger.debug(
-                    "Earnings for %s in %d days (%s)", symbol, days_until, ed
-                )
-                return True
-
-        return False
-    except Exception:
-        logger.warning("Earnings check failed for %s, allowing through", symbol, exc_info=True)
-        return False
+    return False

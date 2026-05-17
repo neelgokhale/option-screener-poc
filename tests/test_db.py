@@ -307,7 +307,7 @@ class TestConfig:
     def test_settings_has_db_path_with_default(self):
         from app.config import Settings
 
-        s = Settings(finnhub_api_key="test")
+        s = Settings(alphavantage_api_key="test")
         assert hasattr(s, "db_path")
         assert isinstance(s.db_path, str)
         assert s.db_path.endswith(".db")

@@ -24,8 +24,12 @@ from app.models.market import MarketRiskStatus
 from app.models.option import ScanResult
 from app.models.report import SummaryResponse, TradeItem, TradesResponse
 from app.models.stock import UniverseFilterResult
-from app.providers.news import FinnhubNewsProvider
-from app.providers.yahoo import YahooFinanceProvider
+from app.providers.av_adapters import (
+    AVMarketDataAdapter,
+    AVNewsAdapter,
+    AVOptionsAdapter,
+)
+from app.providers.av_client import AVClient
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +72,13 @@ app.add_middleware(
 )
 
 # Shared provider instances — created once, reused across requests
-_yahoo = YahooFinanceProvider()
-_news = FinnhubNewsProvider() if settings.finnhub_api_key else None
+_av_client = AVClient(api_key=settings.alphavantage_api_key)
+_market = AVMarketDataAdapter(_av_client)
+_options = AVOptionsAdapter(_av_client)
+_news = AVNewsAdapter(_av_client) if settings.alphavantage_api_key else None
 
 # Request coalescing: if a scan is already running, subsequent requests
 # wait for that same result instead of firing a duplicate scan.
-# This prevents yfinance rate limiting when multiple users hit the endpoint.
 _scan_lock = threading.Lock()
 _scan_in_progress: threading.Event | None = None
 _scan_result: ScanResult | None = None
@@ -100,7 +105,7 @@ def get_universe(symbols: str | None = None) -> UniverseFilterResult:
                  instead of the full S&P 500. Useful for testing.
     """
     symbol_list = symbols.split(",") if symbols else None
-    return filter_universe(_yahoo, symbols=symbol_list)
+    return filter_universe(_market, symbols=symbol_list)
 
 
 @app.get("/api/trades", response_model=ScanResult)
@@ -124,8 +129,8 @@ def get_trades(
     # Custom symbol scans are lightweight — run directly, no coalescing
     if symbol_list is not None:
         return run_scan(
-            market_provider=_yahoo,
-            options_provider=_yahoo,
+            market_provider=_market,
+            options_provider=_options,
             news_provider=_news,
             symbols=symbol_list,
             max_trades=max_trades,
@@ -161,8 +166,8 @@ def _coalesced_scan(max_trades: int | None = None) -> ScanResult:
     # We're the runner — execute the scan
     try:
         result = run_scan(
-            market_provider=_yahoo,
-            options_provider=_yahoo,
+            market_provider=_market,
+            options_provider=_options,
             news_provider=_news,
             symbols=None,
             max_trades=max_trades,
@@ -186,7 +191,7 @@ def _coalesced_scan(max_trades: int | None = None) -> ScanResult:
 @app.get("/api/market-status", response_model=MarketRiskStatus)
 def get_market_status() -> MarketRiskStatus:
     """Get current market risk indicators (VIX + SPY trend)."""
-    return assess_market_risk(_yahoo)
+    return assess_market_risk(_market)
 
 
 # ---------------------------------------------------------------------------

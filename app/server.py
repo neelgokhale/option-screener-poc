@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.db import get_connection, get_summary_stats, get_trades_by_status
+from app.db import get_connection, get_equity_curve_data, get_summary_stats, get_trades_by_status
 from app.engine.market_risk import assess_market_risk
 from app.engine.pipeline import run_scan
 from app.engine.universe import filter_universe
@@ -190,27 +190,63 @@ def get_market_status() -> MarketRiskStatus:
 
 
 # ---------------------------------------------------------------------------
+# Backtest run endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/backtest/runs")
+def get_backtest_runs() -> list[dict]:
+    """Return all backtest runs sorted by started_at descending."""
+    conn = get_connection(settings.db_path)
+    try:
+        rows = conn.execute("""
+            SELECT
+                r.id, r.name, r.started_at, r.completed_at,
+                r.date_range_start, r.date_range_end,
+                COUNT(t.id) AS total_trades
+            FROM backtest_runs r
+            LEFT JOIN snapshots s ON s.backtest_run_id = r.id
+            LEFT JOIN snapshot_trades t ON t.snapshot_id = s.id
+            GROUP BY r.id
+            ORDER BY r.started_at DESC
+        """).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Report endpoints — backtesting data
 # ---------------------------------------------------------------------------
 
 
+@app.get("/api/report/equity-curve")
+def get_equity_curve(backtest_run_id: int | None = None) -> list[dict]:
+    """Return cumulative P&L time series grouped by scan date."""
+    conn = get_connection(settings.db_path)
+    try:
+        return get_equity_curve_data(conn, backtest_run_id=backtest_run_id)
+    finally:
+        conn.close()
+
+
 @app.get("/api/report/summary", response_model=SummaryResponse)
-def get_report_summary() -> SummaryResponse:
+def get_report_summary(backtest_run_id: int | None = None) -> SummaryResponse:
     """Return aggregate backtesting statistics."""
     conn = get_connection(settings.db_path)
     try:
-        stats = get_summary_stats(conn)
+        stats = get_summary_stats(conn, backtest_run_id=backtest_run_id)
         return SummaryResponse(**stats)
     finally:
         conn.close()
 
 
 @app.get("/api/report/trades", response_model=TradesResponse)
-def get_report_trades(status: str = "all") -> TradesResponse:
+def get_report_trades(status: str = "all", backtest_run_id: int | None = None) -> TradesResponse:
     """Return trade list filtered by status with computed fields."""
     conn = get_connection(settings.db_path)
     try:
-        rows = get_trades_by_status(conn, status)
+        rows = get_trades_by_status(conn, status, backtest_run_id=backtest_run_id)
         today = date.today()
         trades = []
         for row in rows:

@@ -10,3 +10,10 @@ Object.defineProperty(globalThis, 'localStorage', {
     clear: () => { for (const k in store) delete store[k] },
   },
 })
+
+// ResizeObserver stub for recharts
+globalThis.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}

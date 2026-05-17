@@ -216,9 +216,9 @@ class TestCronIntegration:
     @patch("cron.snapshot_daily_trades", return_value=1)
     @patch("cron.resolve_expired_trades", return_value=0)
     @patch("cron.get_connection")
-    @patch("cron.YahooFinanceProvider")
+    @patch("cron.AVClient")
     def test_cron_calls_run_backup(
-        self, _provider, mock_conn, _resolve, _snapshot, mock_run_backup
+        self, _client, mock_conn, _resolve, _snapshot, mock_run_backup
     ):
         from cron import main
 

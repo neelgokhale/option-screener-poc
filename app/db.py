@@ -240,3 +240,11 @@ def _create_schema(conn: sqlite3.Connection) -> None:
             pnl_pct REAL
         );
     """)
+    _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(snapshots)").fetchall()}
+    if "backtest_run_id" not in columns:
+        conn.execute("ALTER TABLE snapshots ADD COLUMN backtest_run_id INTEGER REFERENCES backtest_runs(id)")
+        conn.commit()

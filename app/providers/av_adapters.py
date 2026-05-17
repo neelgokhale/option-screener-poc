@@ -72,7 +72,7 @@ class AVMarketDataAdapter(MarketDataProvider):
             net_income=0.0,
             roe=_safe_float(overview.get("ReturnOnEquityTTM")),
             debt_to_ebitda=debt_to_ebitda,
-            avg_volume=0.0,
+            avg_volume=float("inf"),
             current_price=current_price,
             previous_close=current_price,
             beta=_safe_float(overview.get("Beta")) or None,

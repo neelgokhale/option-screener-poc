@@ -8,6 +8,9 @@ import argparse
 import logging
 import sys
 from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.backtest import BacktestRunner
 from app.config import settings

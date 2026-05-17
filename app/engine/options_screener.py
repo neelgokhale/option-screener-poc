@@ -116,7 +116,6 @@ def _evaluate_put(
     expensive calculations last).
     """
     # Filter: open interest (skip filter if OI data is missing, i.e. 0)
-    # yfinance often returns 0 OI after hours or for newer expiries
     if put.open_interest > 0 and put.open_interest < MIN_OPEN_INTEREST:
         return None
 

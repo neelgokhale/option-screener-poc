@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     # API keys
-    finnhub_api_key: str = ""
     resend_api_key: str = ""
     alphavantage_api_key: str = ""
 

@@ -16,7 +16,6 @@ dependencies = [
     "pydantic-settings>=2.13.1",
     "ruff>=0.15.12",
     "uvicorn>=0.41.0",
-    "yfinance>=1.2.0",
 ]
 
 [dependency-groups]

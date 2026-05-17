@@ -15,7 +15,7 @@ export default function EquityCurve({ data }: Props) {
           <YAxis tick={{ fontSize: 11 }} stroke="#888" tickFormatter={(v) => `${v.toFixed(1)}%`} />
           <Tooltip
             contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #333' }}
-            formatter={(value: number) => [`${value.toFixed(2)}%`, 'Cumulative P&L']}
+            formatter={(value) => [`${Number(value ?? 0).toFixed(2)}%`, 'Cumulative P&L']}
           />
           <Line
             type="monotone"

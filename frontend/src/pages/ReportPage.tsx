@@ -59,7 +59,7 @@ export default function ReportPage() {
     )
   }
 
-  if (summary && summary.total_tracked === 0) {
+  if (summary && summary.total_tracked === 0 && runs.length === 0) {
     return (
       <div className="flex-1 px-4 py-4">
         <h1 className="text-lg font-bold mb-4">Backtesting Report</h1>

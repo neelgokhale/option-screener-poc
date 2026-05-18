@@ -13,6 +13,7 @@ This is a pragmatic heuristic for a POC. More sophisticated methods
 """
 
 import logging
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -30,6 +31,8 @@ def find_support_level(
     provider: MarketDataProvider,
     symbol: str,
     current_price: float,
+    *,
+    as_of: date | None = None,
 ) -> float | None:
     """Find the nearest support level below the current price.
 
@@ -42,7 +45,7 @@ def find_support_level(
         The nearest support level below current_price, or None if
         no support level is found (falls back to caller's default).
     """
-    hist = provider.get_price_history(symbol, period=LOOKBACK_PERIOD)
+    hist = provider.get_price_history(symbol, period=LOOKBACK_PERIOD, as_of=as_of)
 
     if hist.empty or len(hist) < WINDOW_SIZE * 2 + 1:
         logger.warning("Insufficient price history for %s", symbol)

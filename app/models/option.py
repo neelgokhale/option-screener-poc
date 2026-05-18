@@ -102,3 +102,5 @@ class Headline(BaseModel):
     source: str
     published_at: str
     url: str | None = None
+    ticker_sentiment_score: float | None = None
+    relevance_score: float | None = None

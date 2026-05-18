@@ -48,6 +48,7 @@ class TestGetConnection:
             "market_risk_elevated",
             "vix_level",
             "spy_price",
+            "backtest_run_id",
         }
 
         # snapshot_trades table exists with expected columns
@@ -306,7 +307,7 @@ class TestConfig:
     def test_settings_has_db_path_with_default(self):
         from app.config import Settings
 
-        s = Settings(finnhub_api_key="test")
+        s = Settings(alphavantage_api_key="test")
         assert hasattr(s, "db_path")
         assert isinstance(s.db_path, str)
         assert s.db_path.endswith(".db")

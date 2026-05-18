@@ -1,0 +1,43 @@
+{
+    "items": "2",
+    "sentiment_score_definition": "x <= -0.35: Bearish; -0.35 < x <= -0.15: Somewhat-Bearish; -0.15 < x < 0.15: Neutral; 0.15 <= x < 0.35: Somewhat_Bullish; x >= 0.35: Bullish",
+    "relevance_score_definition": "0 < x <= 1, with a higher score indicating higher relevance.",
+    "feed": [
+        {
+            "title": "Apple reports record quarterly earnings",
+            "url": "https://example.com/article1",
+            "time_published": "20260514T100000",
+            "authors": ["Test Author"],
+            "summary": "Apple reported strong earnings.",
+            "source": "TestNews",
+            "overall_sentiment_score": 0.35,
+            "overall_sentiment_label": "Bullish",
+            "ticker_sentiment": [
+                {
+                    "ticker": "AAPL",
+                    "relevance_score": "0.90",
+                    "ticker_sentiment_score": "0.40",
+                    "ticker_sentiment_label": "Bullish"
+                }
+            ]
+        },
+        {
+            "title": "Tech sector faces regulatory pressure",
+            "url": "https://example.com/article2",
+            "time_published": "20260514T080000",
+            "authors": ["Another Author"],
+            "summary": "Regulators are investigating.",
+            "source": "OtherNews",
+            "overall_sentiment_score": -0.40,
+            "overall_sentiment_label": "Bearish",
+            "ticker_sentiment": [
+                {
+                    "ticker": "AAPL",
+                    "relevance_score": "0.70",
+                    "ticker_sentiment_score": "-0.38",
+                    "ticker_sentiment_label": "Bearish"
+                }
+            ]
+        }
+    ]
+}

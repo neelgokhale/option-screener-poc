@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from app.engine.options_screener import screen_options_for_stock, _estimate_delta
+from app.engine.options_screener import screen_options_for_stock
 from app.models.option import OptionContract, OptionsChain
 from app.models.stock import StockProfile
 from app.providers.base import MarketDataProvider, OptionsDataProvider
@@ -47,14 +47,14 @@ class MockOptionsProvider(OptionsDataProvider):
     def __init__(self, chains: dict[str, OptionsChain]) -> None:
         self._chains = chains
 
-    def get_expiry_dates(self, symbol: str) -> list[str]:
+    def get_expiry_dates(self, symbol: str, *, as_of=None) -> list[str]:
         return [
             chain.expiry.isoformat()
             for chain in self._chains.values()
             if chain.symbol == symbol
         ]
 
-    def get_options_chain(self, symbol: str, expiry: str) -> OptionsChain:
+    def get_options_chain(self, symbol: str, expiry: str, *, as_of=None) -> OptionsChain:
         return self._chains[expiry]
 
 
@@ -65,11 +65,11 @@ class MockMarketProvider(MarketDataProvider):
         self._stock = stock
         self._support = support_price
 
-    def get_stock_info(self, symbol: str) -> StockProfile | None:
+    def get_stock_info(self, symbol: str, *, as_of=None) -> StockProfile | None:
         return self._stock if symbol == self._stock.symbol else None
 
     def get_price_history(
-        self, symbol: str, period: str = "3mo", interval: str = "1d"
+        self, symbol: str, period: str = "3mo", interval: str = "1d", *, as_of=None
     ) -> pd.DataFrame:
         # Create a price history with a clear dip at support_price
         prices = (
@@ -172,24 +172,19 @@ class TestOptionsScreener:
         assert len(trades) == 0
 
 
-class TestEstimateDelta:
-    def test_atm_put_delta_near_negative_half(self) -> None:
-        """ATM put delta should be around -0.50."""
-        delta = _estimate_delta(spot=150.0, strike=150.0, iv=0.30, dte=20)
-        assert -0.55 < delta < -0.45
+class TestNullDeltaSkipped:
+    def test_put_without_delta_is_skipped(self) -> None:
+        """AV always provides delta; puts without it are skipped."""
+        from datetime import timedelta
+        expiry = date.today() + timedelta(days=17)
+        put = _make_put(delta=None, expiry=expiry)
+        stock = make_stock(symbol="TEST", current_price=150.0)
+        chain = OptionsChain(symbol="TEST", expiry=expiry, puts=[put], calls=[])
+        market = MockMarketProvider(stock, 138.0)
+        options = MockOptionsProvider({expiry.isoformat(): chain})
+        trades = screen_options_for_stock(stock, market, options)
+        assert len(trades) == 0
 
-    def test_otm_put_delta_small(self) -> None:
-        """Deep OTM put should have delta close to 0."""
-        delta = _estimate_delta(spot=150.0, strike=120.0, iv=0.30, dte=20)
-        assert -0.10 < delta < 0.0
-
-    def test_itm_put_delta_near_negative_one(self) -> None:
-        """Deep ITM put should have delta close to -1."""
-        delta = _estimate_delta(spot=150.0, strike=180.0, iv=0.30, dte=20)
-        assert -1.0 < delta < -0.90
-
-    def test_zero_iv_returns_zero(self) -> None:
-        assert _estimate_delta(150.0, 140.0, 0.0, 20) == 0.0
-
-    def test_zero_dte_returns_zero(self) -> None:
-        assert _estimate_delta(150.0, 140.0, 0.30, 0) == 0.0
+    def test_estimate_delta_no_longer_exists(self) -> None:
+        import app.engine.options_screener as mod
+        assert not hasattr(mod, "_estimate_delta")

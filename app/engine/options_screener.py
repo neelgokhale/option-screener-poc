@@ -1,24 +1,6 @@
-"""Options chain screening engine.
-
-Filters raw options chains against the PRD criteria (§3.4) to find
-qualifying short-put candidates. For each stock that passed the universe
-filter, this module:
-
-1. Gets available expiry dates
-2. Filters to expiries 14-21 days out
-3. Fetches the put options chain for qualifying expiries
-4. Applies per-contract filters: delta, POP, premium yield, OI, support
-5. Calculates EV for passing contracts
-6. Returns only EV-positive trades as ScreenedTrade objects
-
-The screener uses delta as a proxy for probability since yfinance doesn't
-reliably provide greeks. When delta is unavailable, we estimate it from
-the option's moneyness and IV using a simplified Black-Scholes delta
-approximation.
-"""
+"""Options chain screening engine."""
 
 import logging
-import math
 from datetime import date, timedelta
 
 from app.engine.ev_calculator import (
@@ -49,19 +31,21 @@ def screen_options_for_stock(
     stock: StockProfile,
     market_provider: MarketDataProvider,
     options_provider: OptionsDataProvider,
+    *,
+    as_of: date | None = None,
 ) -> list[ScreenedTrade]:
     """Screen all qualifying put options for a single stock.
 
     Returns a list of ScreenedTrade objects for contracts that pass
     all filters. May return an empty list if no contracts qualify.
     """
-    today = date.today()
+    today = as_of or date.today()
     target_min = today + timedelta(days=MIN_DTE)
     target_max = today + timedelta(days=MAX_DTE)
 
     # Get available expiry dates
     try:
-        expiry_dates = options_provider.get_expiry_dates(stock.symbol)
+        expiry_dates = options_provider.get_expiry_dates(stock.symbol, as_of=as_of)
     except Exception:
         logger.warning("Failed to get expiry dates for %s", stock.symbol, exc_info=True)
         return []
@@ -73,7 +57,7 @@ def screen_options_for_stock(
 
     # Find support level for strike validation
     support = find_support_level(
-        market_provider, stock.symbol, stock.current_price
+        market_provider, stock.symbol, stock.current_price, as_of=as_of
     )
     if support is None:
         support = stock.current_price * FALLBACK_SUPPORT_DISCOUNT
@@ -82,7 +66,7 @@ def screen_options_for_stock(
     trades: list[ScreenedTrade] = []
     for expiry_str in qualifying_expiries:
         try:
-            chain = options_provider.get_options_chain(stock.symbol, expiry_str)
+            chain = options_provider.get_options_chain(stock.symbol, expiry_str, as_of=as_of)
         except Exception:
             logger.warning(
                 "Failed to get options chain for %s exp %s",
@@ -132,7 +116,6 @@ def _evaluate_put(
     expensive calculations last).
     """
     # Filter: open interest (skip filter if OI data is missing, i.e. 0)
-    # yfinance often returns 0 OI after hours or for newer expiries
     if put.open_interest > 0 and put.open_interest < MIN_OPEN_INTEREST:
         return None
 
@@ -140,12 +123,10 @@ def _evaluate_put(
     if put.strike >= support:
         return None
 
-    # Get or estimate delta
+    # AV provides delta; skip contracts without it
     delta = put.delta
     if delta is None:
-        delta = _estimate_delta(
-            stock.current_price, put.strike, put.implied_volatility, dte
-        )
+        return None
 
     # Filter: delta range (MIN_DELTA to MAX_DELTA)
     if not (MIN_DELTA <= delta <= MAX_DELTA):
@@ -199,30 +180,3 @@ def _evaluate_put(
     )
 
 
-def _estimate_delta(
-    spot: float,
-    strike: float,
-    iv: float,
-    dte: int,
-) -> float:
-    """Estimate put delta when the provider doesn't supply greeks.
-
-    Uses a simplified Black-Scholes delta approximation:
-        d1 = (ln(S/K) + 0.5 * σ² * T) / (σ * √T)
-        put_delta = N(d1) - 1
-
-    Where N() is the standard normal CDF. We assume risk-free rate ≈ 0
-    for simplicity (short-dated options, minimal impact).
-    """
-    if iv <= 0 or dte <= 0 or spot <= 0 or strike <= 0:
-        return 0.0
-
-    t = dte / 365.0
-    sqrt_t = math.sqrt(t)
-    d1 = (math.log(spot / strike) + 0.5 * iv * iv * t) / (iv * sqrt_t)
-
-    # Standard normal CDF approximation
-    nd1 = 0.5 * (1.0 + math.erf(d1 / math.sqrt(2.0)))
-
-    # Put delta = N(d1) - 1
-    return nd1 - 1.0

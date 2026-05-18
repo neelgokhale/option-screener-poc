@@ -14,7 +14,7 @@ a single scan operation.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from app.config import settings
 from app.engine.market_risk import assess_market_risk
@@ -34,6 +34,7 @@ def run_scan(
     news_provider: NewsProvider | None = None,
     symbols: list[str] | None = None,
     max_trades: int | None = None,
+    as_of: date | None = None,
 ) -> ScanResult:
     """Execute the full screening pipeline.
 
@@ -52,7 +53,7 @@ def run_scan(
 
     # Step 1: Universe filter
     logger.info("Starting pipeline scan")
-    universe_result = filter_universe(market_provider, symbols=symbols)
+    universe_result = filter_universe(market_provider, symbols=symbols, as_of=as_of)
     qualified_symbols = universe_result.qualified
 
     logger.info(
@@ -67,7 +68,7 @@ def run_scan(
     # Step 2: Fetch profiles and apply risk filters
     profiles = {}
     for symbol in qualified_symbols:
-        profile = market_provider.get_stock_info(symbol)
+        profile = market_provider.get_stock_info(symbol, as_of=as_of)
         if profile is not None:
             profiles[symbol] = profile
 
@@ -76,6 +77,7 @@ def run_scan(
         profiles=profiles,
         market_provider=market_provider,
         news_provider=news_provider,
+        as_of=as_of,
     )
     filtered_symbols = risk_result.passed
 
@@ -92,7 +94,7 @@ def run_scan(
         )
 
     # Step 3: Assess market risk (VIX + SPY)
-    market_risk = assess_market_risk(market_provider)
+    market_risk = assess_market_risk(market_provider, as_of=as_of)
 
     if market_risk.risk_elevated:
         max_trades = max(1, max_trades // 2)
@@ -108,7 +110,9 @@ def run_scan(
         if stock is None:
             continue
 
-        trades = screen_options_for_stock(stock, market_provider, options_provider)
+        trades = screen_options_for_stock(
+            stock, market_provider, options_provider, as_of=as_of
+        )
         all_trades.extend(trades)
 
         logger.debug(
@@ -132,7 +136,8 @@ def run_scan(
             continue
 
         safety = calculate_safety_score(
-            trade, profile, market_risk, market_provider, options_provider
+            trade, profile, market_risk, options_provider, news_provider,
+            as_of=as_of,
         )
         adjusted = calculate_adjusted_score(trade.expected_value, safety.score)
         scored_trades.append((trade, safety.score, adjusted))

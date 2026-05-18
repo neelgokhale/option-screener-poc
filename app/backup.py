@@ -31,6 +31,10 @@ def backup_db_to_s3(
     client.upload_file(db_path, bucket, key)
     logger.info("Uploaded %s to s3://%s/%s", db_path, bucket, key)
 
+    latest_key = "backups/screener-latest.db"
+    client.upload_file(db_path, bucket, latest_key)
+    logger.info("Uploaded immortal copy to s3://%s/%s", bucket, latest_key)
+
     _prune_old_backups(client, bucket, retention_days)
 
     return key
@@ -47,7 +51,9 @@ def _prune_old_backups(
     to_delete = [
         obj["Key"]
         for obj in contents
-        if (d := _parse_backup_date(obj["Key"])) is not None and d < cutoff
+        if obj["Key"] != "backups/screener-latest.db"
+        and (d := _parse_backup_date(obj["Key"])) is not None
+        and d < cutoff
     ]
 
     if to_delete:
@@ -56,6 +62,24 @@ def _prune_old_backups(
             Delete={"Objects": [{"Key": k} for k in to_delete]},
         )
         logger.info("Pruned %d old backup(s)", len(to_delete))
+
+
+def restore_db_from_s3(
+    db_path: str,
+    bucket: str,
+    region: str,
+    aws_access_key_id: str = "",
+    aws_secret_access_key: str = "",
+) -> None:
+    """Download the latest DB from S3 for cache hydration."""
+    client_kwargs = {"region_name": region}
+    if aws_access_key_id and aws_secret_access_key:
+        client_kwargs["aws_access_key_id"] = aws_access_key_id
+        client_kwargs["aws_secret_access_key"] = aws_secret_access_key
+    client = boto3.client("s3", **client_kwargs)
+    key = "backups/screener-latest.db"
+    client.download_file(bucket, key, db_path)
+    logger.info("Restored %s from s3://%s/%s", db_path, bucket, key)
 
 
 def run_backup(settings) -> None:

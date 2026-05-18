@@ -3,6 +3,7 @@
 import sqlite3
 from datetime import date
 
+from app.backtest import trade_output_to_dict
 from app.db import insert_snapshot, insert_trades
 from app.engine.market_risk import assess_market_risk
 from app.engine.pipeline import run_scan
@@ -44,29 +45,7 @@ def snapshot_daily_trades(
     snapshot_id = insert_snapshot(conn, snapshot)
 
     if scan.trades:
-        trade_dicts = [
-            {
-                "rank": t.rank,
-                "symbol": t.symbol,
-                "expiry": t.expiry.isoformat(),
-                "strike": t.strike,
-                "premium": t.premium,
-                "pop": t.pop,
-                "delta": t.delta,
-                "theta": t.theta,
-                "implied_volatility": t.implied_volatility,
-                "expected_value": t.expected_value,
-                "days_to_expiry": t.days_to_expiry,
-                "support_level": t.support_level,
-                "current_price": t.current_price,
-                "premium_yield": t.premium_yield,
-                "open_interest": t.open_interest,
-                "safety_score": t.safety_score,
-                "adjusted_score": t.adjusted_score,
-                "next_earnings": t.next_earnings.isoformat() if t.next_earnings else None,
-            }
-            for t in scan.trades
-        ]
+        trade_dicts = [trade_output_to_dict(t) for t in scan.trades]
         insert_trades(conn, snapshot_id, trade_dicts)
 
     return snapshot_id

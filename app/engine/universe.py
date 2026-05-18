@@ -18,6 +18,7 @@ applies per-contract, not per-stock.
 
 import logging
 from dataclasses import dataclass, field
+from datetime import date
 
 from app.models.stock import StockProfile, UniverseFilterResult
 from app.providers.base import MarketDataProvider
@@ -43,6 +44,7 @@ class _FilterTracker:
 def filter_universe(
     provider: MarketDataProvider,
     symbols: list[str] | None = None,
+    as_of: date | None = None,
 ) -> UniverseFilterResult:
     """Run fundamental filters on S&P 500 stocks.
 
@@ -60,7 +62,7 @@ def filter_universe(
     qualified: list[str] = []
 
     for symbol in symbols:
-        profile = provider.get_stock_info(symbol)
+        profile = provider.get_stock_info(symbol, as_of=as_of)
 
         if profile is None:
             tracker.exclude(symbol, "data_unavailable")
@@ -94,10 +96,6 @@ def _passes_filters(profile: StockProfile, tracker: _FilterTracker) -> bool:
 
     if profile.market_cap < MIN_MARKET_CAP:
         tracker.exclude(symbol, "market_cap_below_10B")
-        return False
-
-    if profile.net_income <= 0:
-        tracker.exclude(symbol, "negative_net_income")
         return False
 
     if profile.roe < MIN_ROE:

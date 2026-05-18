@@ -72,6 +72,22 @@ export interface TradesResponse {
   trades: ReportTradeItem[]
 }
 
+export interface BacktestRun {
+  id: number
+  name: string
+  started_at: string
+  completed_at: string | null
+  date_range_start: string
+  date_range_end: string
+  total_trades: number
+}
+
+export interface EquityCurvePoint {
+  scan_date: string
+  cumulative_pnl_pct: number
+  trade_count: number
+}
+
 export interface MarketRiskStatus {
   vix_level: number
   vix_threshold: number

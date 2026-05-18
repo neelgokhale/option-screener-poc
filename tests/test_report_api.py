@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db import get_connection, insert_snapshot, insert_trades, update_trade_outcome
+from app.db import insert_snapshot, insert_trades, update_trade_outcome
 
 
 SAMPLE_SNAPSHOT = {
@@ -81,7 +81,119 @@ def _seed_mixed_trades(conn):
             update_trade_outcome(conn, t["id"], "ITM", 195.0, -1.25)
 
 
+def _seed_backtest_runs(conn):
+    """Insert two backtest runs with different started_at times."""
+    conn.execute(
+        """INSERT INTO backtest_runs (name, started_at, completed_at, date_range_start, date_range_end, scan_frequency, strategy_params)
+           VALUES ('run-alpha', '2026-03-01T10:00:00+00:00', '2026-03-01T11:00:00+00:00', '2025-01-01', '2025-06-30', 'weekly', '{}')"""
+    )
+    conn.execute(
+        """INSERT INTO backtest_runs (name, started_at, completed_at, date_range_start, date_range_end, scan_frequency, strategy_params)
+           VALUES ('run-beta', '2026-04-15T08:00:00+00:00', '2026-04-15T09:00:00+00:00', '2025-07-01', '2025-12-31', 'weekly', '{}')"""
+    )
+    conn.commit()
+
+
+class TestBacktestRuns:
+    def test_returns_runs_sorted_by_started_at_desc(self, client, conn):
+        _seed_backtest_runs(conn)
+        resp = client.get("/api/backtest/runs")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["name"] == "run-beta"
+        assert data[1]["name"] == "run-alpha"
+        assert "id" in data[0]
+        assert "started_at" in data[0]
+        assert "total_trades" in data[0]
+
+
+    def test_returns_empty_list_when_no_runs(self, client):
+        resp = client.get("/api/backtest/runs")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
+def _seed_run_with_trades(conn) -> int:
+    """Create a backtest run with 2 trades (1 resolved OTM, 1 active)."""
+    conn.execute(
+        """INSERT INTO backtest_runs (id, name, started_at, completed_at, date_range_start, date_range_end, scan_frequency, strategy_params)
+           VALUES (99, 'test-run', '2026-03-01T10:00:00+00:00', '2026-03-01T11:00:00+00:00', '2025-01-01', '2025-06-30', 'weekly', '{}')"""
+    )
+    conn.commit()
+    snap_id = insert_snapshot(conn, {**SAMPLE_SNAPSHOT, "backtest_run_id": 99})
+    resolved = {**SAMPLE_TRADE, "expiry": "2026-04-01"}
+    active = {**SAMPLE_TRADE, "rank": 2, "symbol": "MSFT", "expiry": "2026-04-25"}
+    insert_trades(conn, snap_id, [resolved, active])
+    trade_id = conn.execute(
+        "SELECT id FROM snapshot_trades WHERE symbol = 'AAPL' AND snapshot_id = ?", (snap_id,)
+    ).fetchone()["id"]
+    update_trade_outcome(conn, trade_id, "OTM", 210.0, 1.25)
+    return 99
+
+
+def _seed_run_with_equity_data(conn) -> int:
+    """Create a run with resolved trades across multiple snapshot dates for equity curve."""
+    conn.execute(
+        """INSERT INTO backtest_runs (id, name, started_at, completed_at, date_range_start, date_range_end, scan_frequency, strategy_params)
+           VALUES (50, 'equity-run', '2026-02-01T10:00:00+00:00', '2026-02-01T11:00:00+00:00', '2025-01-01', '2025-03-31', 'weekly', '{}')"""
+    )
+    conn.commit()
+    # Two snapshots on different dates
+    snap1 = insert_snapshot(conn, {**SAMPLE_SNAPSHOT, "snapshot_date": "2025-01-15", "backtest_run_id": 50})
+    snap2 = insert_snapshot(conn, {**SAMPLE_SNAPSHOT, "snapshot_date": "2025-02-15", "backtest_run_id": 50})
+    trade1 = {**SAMPLE_TRADE, "expiry": "2025-01-30"}
+    trade2 = {**SAMPLE_TRADE, "rank": 2, "symbol": "MSFT", "expiry": "2025-02-28"}
+    insert_trades(conn, snap1, [trade1])
+    insert_trades(conn, snap2, [trade2])
+    # Resolve both
+    t1_id = conn.execute("SELECT id FROM snapshot_trades WHERE snapshot_id = ?", (snap1,)).fetchone()["id"]
+    t2_id = conn.execute("SELECT id FROM snapshot_trades WHERE snapshot_id = ?", (snap2,)).fetchone()["id"]
+    update_trade_outcome(conn, t1_id, "OTM", 210.0, 1.5)
+    update_trade_outcome(conn, t2_id, "ITM", 195.0, -0.8)
+    return 50
+
+
+class TestEquityCurve:
+    def test_returns_cumulative_pnl_for_run(self, client, conn):
+        run_id = _seed_run_with_equity_data(conn)
+        resp = client.get(f"/api/report/equity-curve?backtest_run_id={run_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["scan_date"] == "2025-01-15"
+        assert data[0]["cumulative_pnl_pct"] == pytest.approx(1.5)
+        assert data[0]["trade_count"] == 1
+        assert data[1]["scan_date"] == "2025-02-15"
+        assert data[1]["cumulative_pnl_pct"] == pytest.approx(0.7)  # 1.5 + (-0.8)
+        assert data[1]["trade_count"] == 1
+
+
+    def test_returns_empty_when_no_resolved_trades(self, client, conn):
+        resp = client.get("/api/report/equity-curve?backtest_run_id=999")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
 class TestReportSummary:
+    def test_summary_filters_by_backtest_run_id(self, client, conn):
+        _seed_mixed_trades(conn)  # live trades
+        run_id = _seed_run_with_trades(conn)  # backtest run trades
+        resp = client.get(f"/api/report/summary?backtest_run_id={run_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_tracked"] == 2
+        assert data["total_resolved"] == 1
+        assert data["total_active"] == 1
+
+    def test_summary_excludes_backtest_data_when_no_run_id(self, client, conn):
+        _seed_mixed_trades(conn)  # 3 live trades
+        _seed_run_with_trades(conn)  # 2 backtest trades — should NOT appear
+        resp = client.get("/api/report/summary")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_tracked"] == 3
+
     def test_summary_with_data(self, client, conn):
         _seed_mixed_trades(conn)
         resp = client.get("/api/report/summary")
@@ -107,6 +219,23 @@ class TestReportSummary:
 
 
 class TestReportTrades:
+    def test_trades_filters_by_backtest_run_id(self, client, conn):
+        _seed_mixed_trades(conn)  # 3 live trades
+        run_id = _seed_run_with_trades(conn)  # 2 backtest trades
+        resp = client.get(f"/api/report/trades?backtest_run_id={run_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["trades"]) == 2
+        symbols = {t["symbol"] for t in data["trades"]}
+        assert symbols == {"AAPL", "MSFT"}
+
+    def test_trades_excludes_backtest_data_when_no_run_id(self, client, conn):
+        _seed_mixed_trades(conn)  # 3 live trades
+        _seed_run_with_trades(conn)  # 2 backtest trades — should NOT appear
+        resp = client.get("/api/report/trades")
+        assert resp.status_code == 200
+        assert len(resp.json()["trades"]) == 3
+
     def test_filter_active(self, client, conn):
         _seed_mixed_trades(conn)
         resp = client.get("/api/report/trades?status=active")

@@ -22,8 +22,8 @@ def insert_snapshot(conn: sqlite3.Connection, snapshot: dict) -> int:
         """
         INSERT INTO snapshots (
             snapshot_date, universe_size, qualified_stocks, trades_screened,
-            market_risk_elevated, vix_level, spy_price
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            market_risk_elevated, vix_level, spy_price, backtest_run_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             snapshot["snapshot_date"],
@@ -33,6 +33,7 @@ def insert_snapshot(conn: sqlite3.Connection, snapshot: dict) -> int:
             snapshot["market_risk_elevated"],
             snapshot["vix_level"],
             snapshot["spy_price"],
+            snapshot.get("backtest_run_id"),
         ),
     )
     conn.commit()
@@ -81,29 +82,48 @@ def update_trade_outcome(
     conn.commit()
 
 
-def get_unresolved_trades(conn: sqlite3.Connection, as_of_date: date) -> list[dict]:
+def get_unresolved_trades(
+    conn: sqlite3.Connection,
+    as_of_date: date,
+    *,
+    backtest_run_id: int | None = None,
+) -> list[dict]:
     """Return trades where outcome is NULL and expiry <= as_of_date."""
-    rows = conn.execute(
-        """
+    query = """
         SELECT t.*, s.snapshot_date
         FROM snapshot_trades t
         JOIN snapshots s ON t.snapshot_id = s.id
         WHERE t.outcome IS NULL AND t.expiry <= ?
-        """,
-        (as_of_date.isoformat(),),
-    ).fetchall()
+    """
+    params: list = [as_of_date.isoformat()]
+
+    if backtest_run_id is not None:
+        query += " AND s.backtest_run_id = ?"
+        params.append(backtest_run_id)
+
+    rows = conn.execute(query, params).fetchall()
     return [dict(row) for row in rows]
 
 
-def get_summary_stats(conn: sqlite3.Connection) -> dict:
+def get_summary_stats(conn: sqlite3.Connection, *, backtest_run_id: int | None = None) -> dict:
     """Compute aggregate backtesting statistics from stored trades."""
-    counts = conn.execute("""
+    run_filter = ""
+    params: list = []
+    if backtest_run_id is not None:
+        run_filter = " AND s.backtest_run_id = ?"
+        params = [backtest_run_id]
+    else:
+        run_filter = " AND s.backtest_run_id IS NULL"
+
+    counts = conn.execute(f"""
         SELECT
             COUNT(*) AS total_tracked,
-            SUM(CASE WHEN outcome IS NOT NULL THEN 1 ELSE 0 END) AS total_resolved,
-            SUM(CASE WHEN outcome IS NULL THEN 1 ELSE 0 END) AS total_active
-        FROM snapshot_trades
-    """).fetchone()
+            SUM(CASE WHEN t.outcome IS NOT NULL THEN 1 ELSE 0 END) AS total_resolved,
+            SUM(CASE WHEN t.outcome IS NULL THEN 1 ELSE 0 END) AS total_active
+        FROM snapshot_trades t
+        JOIN snapshots s ON t.snapshot_id = s.id
+        WHERE 1=1{run_filter}
+    """, params).fetchone()
 
     total_tracked = counts["total_tracked"]
     total_resolved = counts["total_resolved"]
@@ -123,20 +143,22 @@ def get_summary_stats(conn: sqlite3.Connection) -> dict:
             "date_range_end": None,
         }
 
-    resolved_stats = conn.execute("""
+    resolved_stats = conn.execute(f"""
         SELECT
-            SUM(CASE WHEN outcome = 'OTM' THEN 1 ELSE 0 END) AS wins,
-            AVG(pnl_pct) AS avg_return_pct,
-            AVG(CASE WHEN outcome = 'OTM' THEN pnl_pct END) AS avg_win_pct,
-            AVG(CASE WHEN outcome = 'ITM' THEN pnl_pct END) AS avg_loss_pct
-        FROM snapshot_trades
-        WHERE outcome IS NOT NULL
-    """).fetchone()
+            SUM(CASE WHEN t.outcome = 'OTM' THEN 1 ELSE 0 END) AS wins,
+            AVG(t.pnl_pct) AS avg_return_pct,
+            AVG(CASE WHEN t.outcome = 'OTM' THEN t.pnl_pct END) AS avg_win_pct,
+            AVG(CASE WHEN t.outcome = 'ITM' THEN t.pnl_pct END) AS avg_loss_pct
+        FROM snapshot_trades t
+        JOIN snapshots s ON t.snapshot_id = s.id
+        WHERE t.outcome IS NOT NULL{run_filter}
+    """, params).fetchone()
 
-    date_range = conn.execute("""
-        SELECT MIN(snapshot_date) AS date_range_start, MAX(snapshot_date) AS date_range_end
-        FROM snapshots
-    """).fetchone()
+    date_range = conn.execute(f"""
+        SELECT MIN(s.snapshot_date) AS date_range_start, MAX(s.snapshot_date) AS date_range_end
+        FROM snapshots s
+        WHERE 1=1{run_filter}
+    """, params).fetchone()
 
     hit_rate = None
     avg_win_pct = resolved_stats["avg_win_pct"]
@@ -163,24 +185,83 @@ def get_summary_stats(conn: sqlite3.Connection) -> dict:
     }
 
 
-def get_trades_by_status(conn: sqlite3.Connection, status: str) -> list[dict]:
+def get_trades_by_status(
+    conn: sqlite3.Connection, status: str, *, backtest_run_id: int | None = None
+) -> list[dict]:
     """Return trades filtered by status: 'active', 'resolved', or 'all'."""
     base = """
         SELECT t.*, s.snapshot_date
         FROM snapshot_trades t
         JOIN snapshots s ON t.snapshot_id = s.id
     """
-    if status == "active":
-        rows = conn.execute(base + " WHERE t.outcome IS NULL").fetchall()
-    elif status == "resolved":
-        rows = conn.execute(base + " WHERE t.outcome IS NOT NULL").fetchall()
+    conditions: list[str] = []
+    params: list = []
+
+    if backtest_run_id is not None:
+        conditions.append("s.backtest_run_id = ?")
+        params.append(backtest_run_id)
     else:
-        rows = conn.execute(base).fetchall()
+        conditions.append("s.backtest_run_id IS NULL")
+
+    if status == "active":
+        conditions.append("t.outcome IS NULL")
+    elif status == "resolved":
+        conditions.append("t.outcome IS NOT NULL")
+
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    rows = conn.execute(base + where, params).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_equity_curve_data(
+    conn: sqlite3.Connection, *, backtest_run_id: int | None = None
+) -> list[dict]:
+    """Return cumulative P&L time series grouped by snapshot date."""
+    run_filter = ""
+    params: list = []
+    if backtest_run_id is not None:
+        run_filter = " AND s.backtest_run_id = ?"
+        params = [backtest_run_id]
+    else:
+        run_filter = " AND s.backtest_run_id IS NULL"
+
+    rows = conn.execute(f"""
+        SELECT
+            s.snapshot_date AS scan_date,
+            SUM(t.pnl_pct) AS day_pnl,
+            COUNT(t.id) AS trade_count
+        FROM snapshot_trades t
+        JOIN snapshots s ON t.snapshot_id = s.id
+        WHERE t.outcome IS NOT NULL{run_filter}
+        GROUP BY s.snapshot_date
+        ORDER BY s.snapshot_date
+    """, params).fetchall()
+
+    result = []
+    cumulative = 0.0
+    for row in rows:
+        cumulative += row["day_pnl"]
+        result.append({
+            "scan_date": row["scan_date"],
+            "cumulative_pnl_pct": cumulative,
+            "trade_count": row["trade_count"],
+        })
+    return result
 
 
 def _create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript("""
+        CREATE TABLE IF NOT EXISTS backtest_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            date_range_start TEXT NOT NULL,
+            date_range_end TEXT NOT NULL,
+            scan_frequency TEXT NOT NULL,
+            strategy_params TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             snapshot_date TEXT NOT NULL,
@@ -189,7 +270,8 @@ def _create_schema(conn: sqlite3.Connection) -> None:
             trades_screened INTEGER NOT NULL,
             market_risk_elevated INTEGER NOT NULL,
             vix_level REAL NOT NULL,
-            spy_price REAL NOT NULL
+            spy_price REAL NOT NULL,
+            backtest_run_id INTEGER REFERENCES backtest_runs(id)
         );
 
         CREATE TABLE IF NOT EXISTS snapshot_trades (
@@ -218,3 +300,11 @@ def _create_schema(conn: sqlite3.Connection) -> None:
             pnl_pct REAL
         );
     """)
+    _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(snapshots)").fetchall()}
+    if "backtest_run_id" not in columns:
+        conn.execute("ALTER TABLE snapshots ADD COLUMN backtest_run_id INTEGER REFERENCES backtest_runs(id)")
+        conn.commit()
